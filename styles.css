@@ -388,42 +388,22 @@ img {
 }
 
 .service-thumb {
-  height: 130px;
-  display: grid;
-  place-items: center;
+  height: 180px;
+  overflow: hidden;
   position: relative;
+  background: var(--cream);
 }
 
-.service-thumb::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(to bottom, transparent 55%, rgba(255, 255, 255, 0.35));
-  pointer-events: none;
+.service-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  transition: transform 0.35s ease;
 }
 
-.service-thumb--pink    { background: linear-gradient(135deg, #fce4ec, #f8bbd0); }
-.service-thumb--gold    { background: linear-gradient(135deg, #fff3e0, #ffcc80); }
-.service-thumb--lavender{ background: linear-gradient(135deg, #f3e5f5, #ce93d8); }
-.service-thumb--blue    { background: linear-gradient(135deg, #e8eaf6, #9fa8da); }
-.service-thumb--aqua    { background: linear-gradient(135deg, #e0f7fa, #80deea); }
-.service-thumb--rose    { background: linear-gradient(135deg, #fce4ec, #f48fb1); }
-.service-thumb--sage    { background: linear-gradient(135deg, #e8f5e9, #a5d6a7); }
-.service-thumb--peach   { background: linear-gradient(135deg, #fff8e1, #ffe082); }
-.service-thumb--neutral { background: linear-gradient(135deg, #fafafa, #e0e0e0); }
-.service-thumb--coral   { background: linear-gradient(135deg, #fbe9e7, #ffab91); }
-
-.service-emoji {
-  font-size: 3rem;
-  position: relative;
-  z-index: 1;
-  line-height: 1;
-  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.08));
-  transition: transform 0.25s;
-}
-
-.service-card:hover .service-emoji {
-  transform: scale(1.1);
+.service-card:hover .service-thumb img {
+  transform: scale(1.05);
 }
 
 .service-body {
