@@ -8,10 +8,12 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Great+Vibes&family=Source+Sans+3:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=8">
+  <link rel="stylesheet" href="styles.css?v=10">
 </head>
 <body>
-  <header class="site-header">
+  <div class="scroll-progress" aria-hidden="true"></div>
+
+  <header class="site-header" data-header>
     <nav class="nav">
       <a href="#" class="nav-logo">Sue's Nails</a>
       <button class="nav-toggle" aria-label="Open menu" aria-expanded="false">
@@ -29,18 +31,31 @@
   </header>
 
   <main>
-    <section class="hero">
-      <div class="hero-bg-pattern" aria-hidden="true"></div>
-      <div class="hero-content">
-        <p class="hero-eyebrow">Rancho Cucamonga, California</p>
-        <h1>Sue's Nails</h1>
-        <p class="hero-tagline">Professional Nail Care Center for Ladies &amp; Gentlemen</p>
-        <div class="hero-actions">
-          <a href="tel:19099451679" class="btn btn-primary">
+    <section class="hero" data-hero>
+      <div class="hero-bg" aria-hidden="true">
+        <div class="hero-orb hero-orb--1" data-parallax="0.25"></div>
+        <div class="hero-orb hero-orb--2" data-parallax="0.4"></div>
+        <div class="hero-orb hero-orb--3" data-parallax="0.15"></div>
+        <span class="hero-sparkle" style="--sx: 8%; --sy: 18%; --sd: 0s;">✦</span>
+        <span class="hero-sparkle" style="--sx: 88%; --sy: 24%; --sd: 1.2s;">✦</span>
+        <span class="hero-sparkle" style="--sx: 16%; --sy: 74%; --sd: 2.1s;">✦</span>
+        <span class="hero-sparkle" style="--sx: 78%; --sy: 68%; --sd: 0.6s;">✦</span>
+        <span class="hero-sparkle" style="--sx: 50%; --sy: 12%; --sd: 1.7s;">✦</span>
+      </div>
+      <div class="hero-content" data-parallax="-0.12">
+        <p class="hero-eyebrow reveal-on-load" style="--delay: 0.1s;">Rancho Cucamonga, California</p>
+        <h1 class="hero-title" data-split>Sue's Nails</h1>
+        <p class="hero-tagline reveal-on-load" style="--delay: 0.9s;">Professional Nail Care Center for Ladies &amp; Gentlemen</p>
+        <p class="hero-status reveal-on-load" style="--delay: 1.05s;">
+          <span class="status-dot" data-status-dot></span>
+          <span data-status-text>Checking hours…</span>
+        </p>
+        <div class="hero-actions reveal-on-load" style="--delay: 1.2s;">
+          <a href="tel:19099451679" class="btn btn-primary" data-magnetic>
             <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
             (909) 945-1679
           </a>
-          <a href="#contact" class="btn btn-secondary">
+          <a href="#contact" class="btn btn-secondary" data-magnetic>
             <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
             Get Directions
           </a>
@@ -52,7 +67,7 @@
       </div>
     </section>
 
-    <section class="trust-bar">
+    <section class="trust-bar" aria-label="Highlights">
       <div class="container trust-inner">
         <div class="trust-item">
           <span class="trust-icon">✦</span>
@@ -71,12 +86,12 @@
 
     <section id="services" class="section services">
       <div class="container">
-        <div class="section-header">
+        <div class="section-header reveal">
           <h2>Our Services</h2>
           <p class="section-lead">From classic manicures to specialty treatments — everything you need to look and feel your best.</p>
         </div>
-        <ul class="service-grid">
-          <li class="service-card">
+        <ul class="service-grid" data-stagger>
+          <li class="service-card reveal" data-tilt>
             <div class="service-thumb">
               <img src="images/services/pink-white.png" alt="Pink and white French manicure" loading="lazy">
             </div>
@@ -84,8 +99,9 @@
               <h3>Pink &amp; White</h3>
               <p>Classic French tips with a clean, timeless finish.</p>
             </div>
+            <span class="card-shine" aria-hidden="true"></span>
           </li>
-          <li class="service-card">
+          <li class="service-card reveal" data-tilt>
             <div class="service-thumb">
               <img src="images/services/acrylic.png" alt="Acrylic nail extensions" loading="lazy">
             </div>
@@ -93,17 +109,9 @@
               <h3>Acrylic</h3>
               <p>Durable, sculpted nails built to last.</p>
             </div>
+            <span class="card-shine" aria-hidden="true"></span>
           </li>
-          <li class="service-card">
-            <div class="service-thumb">
-              <img src="images/services/silk-wraps.png" alt="Silk wrap nail treatment" loading="lazy">
-            </div>
-            <div class="service-body">
-              <h3>Silk Wraps</h3>
-              <p>Lightweight reinforcement for natural nails.</p>
-            </div>
-          </li>
-          <li class="service-card">
+          <li class="service-card reveal" data-tilt>
             <div class="service-thumb">
               <img src="images/services/nail-art-3d.png" alt="3D nail art design" loading="lazy">
             </div>
@@ -111,8 +119,9 @@
               <h3>3D Nail Art</h3>
               <p>Custom designs with dimension and detail.</p>
             </div>
+            <span class="card-shine" aria-hidden="true"></span>
           </li>
-          <li class="service-card">
+          <li class="service-card reveal" data-tilt>
             <div class="service-thumb">
               <img src="images/services/gel.png" alt="Gel nail polish manicure" loading="lazy">
             </div>
@@ -120,8 +129,29 @@
               <h3>Gel</h3>
               <p>High-shine, chip-resistant gel polish.</p>
             </div>
+            <span class="card-shine" aria-hidden="true"></span>
           </li>
-          <li class="service-card">
+          <li class="service-card reveal" data-tilt>
+            <div class="service-thumb">
+              <img src="images/services/gel-builder.png" alt="Gel builder for natural nails" loading="lazy">
+            </div>
+            <div class="service-body">
+              <h3>Gel Builder</h3>
+              <p>Natural nail strengthening with a durable gel overlay.</p>
+            </div>
+            <span class="card-shine" aria-hidden="true"></span>
+          </li>
+          <li class="service-card reveal" data-tilt>
+            <div class="service-thumb">
+              <img src="images/services/gel-x-extension.png" alt="Gel-X nail extensions" loading="lazy">
+            </div>
+            <div class="service-body">
+              <h3>Gel-X Extension</h3>
+              <p>Soft gel tips for length with a natural, flexible finish.</p>
+            </div>
+            <span class="card-shine" aria-hidden="true"></span>
+          </li>
+          <li class="service-card reveal" data-tilt>
             <div class="service-thumb">
               <img src="images/services/manicure.png" alt="Classic manicure" loading="lazy">
             </div>
@@ -129,8 +159,9 @@
               <h3>Manicure</h3>
               <p>Hand care, shaping, and polish for a polished look.</p>
             </div>
+            <span class="card-shine" aria-hidden="true"></span>
           </li>
-          <li class="service-card">
+          <li class="service-card reveal" data-tilt>
             <div class="service-thumb">
               <img src="images/services/spa-pedicure.png" alt="Spa pedicure treatment" loading="lazy">
             </div>
@@ -138,8 +169,9 @@
               <h3>Spa Pedicure</h3>
               <p>Relaxing foot soak, exfoliation, and massage.</p>
             </div>
+            <span class="card-shine" aria-hidden="true"></span>
           </li>
-          <li class="service-card">
+          <li class="service-card reveal" data-tilt>
             <div class="service-thumb">
               <img src="images/services/facial.png" alt="Facial skin treatment" loading="lazy">
             </div>
@@ -147,8 +179,9 @@
               <h3>Facial</h3>
               <p>Refreshing skin treatments for a healthy glow.</p>
             </div>
+            <span class="card-shine" aria-hidden="true"></span>
           </li>
-          <li class="service-card">
+          <li class="service-card reveal" data-tilt>
             <div class="service-thumb">
               <img src="images/services/waxing.png" alt="Professional waxing service" loading="lazy">
             </div>
@@ -156,8 +189,9 @@
               <h3>Waxing</h3>
               <p>Smooth, professional hair removal services.</p>
             </div>
+            <span class="card-shine" aria-hidden="true"></span>
           </li>
-          <li class="service-card">
+          <li class="service-card reveal" data-tilt>
             <div class="service-thumb">
               <img src="images/services/eyelash-extensions.png" alt="Eyelash extensions" loading="lazy">
             </div>
@@ -165,26 +199,48 @@
               <h3>Eyelash Extensions</h3>
               <p>Fuller, longer lashes tailored to your style.</p>
             </div>
+            <span class="card-shine" aria-hidden="true"></span>
           </li>
         </ul>
       </div>
     </section>
 
+    <section class="stats-band">
+      <div class="container stats-inner">
+        <div class="stat reveal">
+          <span class="stat-number"><span data-count="11">0</span>+</span>
+          <span class="stat-label">Services Offered</span>
+        </div>
+        <div class="stat reveal">
+          <span class="stat-number"><span data-count="7">0</span></span>
+          <span class="stat-label">Days Open a Week</span>
+        </div>
+        <div class="stat reveal">
+          <span class="stat-number"><span data-count="11">0</span> hrs</span>
+          <span class="stat-label">Open Daily Mon–Sat</span>
+        </div>
+      </div>
+    </section>
+
     <section id="hours" class="section hours">
       <div class="container hours-inner">
-        <div class="hours-text">
+        <div class="hours-text reveal">
           <h2>Visit Us</h2>
           <p class="section-lead">Walk-ins welcome. No appointment needed for most services.</p>
+          <p class="hours-status">
+            <span class="status-dot" data-status-dot></span>
+            <span data-status-text>Checking hours…</span>
+          </p>
         </div>
-        <dl class="hours-list">
-          <div class="hours-row">
+        <dl class="hours-list reveal">
+          <div class="hours-row" data-days="1,2,3,4,5,6">
             <dt>
               <svg class="hours-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
               Monday – Saturday
             </dt>
             <dd>9:00 AM – 8:00 PM</dd>
           </div>
-          <div class="hours-row">
+          <div class="hours-row" data-days="0">
             <dt>
               <svg class="hours-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
               Sunday
@@ -197,7 +253,7 @@
 
     <section id="contact" class="section contact">
       <div class="container contact-inner">
-        <div class="contact-info">
+        <div class="contact-info reveal">
           <h2>Contact &amp; Location</h2>
           <address>
             <p class="contact-item">
@@ -221,19 +277,20 @@
             class="btn btn-primary"
             target="_blank"
             rel="noopener noreferrer"
+            data-magnetic
           >
             <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/></svg>
             Open in Google Maps
           </a>
         </div>
-        <div class="map-embed">
+        <div class="map-embed reveal">
           <iframe
             title="Sue's Nails location on Google Maps"
             src="https://maps.google.com/maps?q=10590+Baseline+Rd,+Suite+C,+Rancho+Cucamonga,+CA+91737&z=15&output=embed"
             width="600"
             height="450"
             allowfullscreen=""
-            loading="eager"
+            loading="lazy"
             referrerpolicy="no-referrer-when-downgrade"
           ></iframe>
         </div>
@@ -250,6 +307,10 @@
     </div>
   </footer>
 
-  <script src="script.js"></script>
+  <button class="back-to-top" data-back-to-top aria-label="Back to top">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+  </button>
+
+  <script src="script.js?v=10"></script>
 </body>
 </html>
