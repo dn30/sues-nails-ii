@@ -403,6 +403,83 @@ img {
   line-height: 1.5;
 }
 
+.price-badge {
+  position: absolute;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  background: rgba(255, 255, 255, 0.94);
+  color: var(--gold-dark);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 0.3rem 0.65rem;
+  border: 1px solid var(--gold-hairline);
+  border-radius: 999px;
+  box-shadow: 0 2px 8px var(--shadow);
+}
+
+.services-cta {
+  text-align: center;
+  margin-top: 2.5rem;
+}
+
+/* Prices */
+.prices {
+  background: var(--cream);
+}
+
+.price-menu {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1.5rem;
+  align-items: start;
+}
+
+.price-category {
+  background: var(--white);
+  border: 1px solid var(--gold-hairline);
+  border-radius: var(--radius);
+  padding: 1.75rem 1.75rem 1.5rem;
+}
+
+.price-category h3 {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--ink);
+  padding-bottom: 0.75rem;
+  margin-bottom: 0.5rem;
+  border-bottom: 1px solid var(--gold-hairline);
+}
+
+.price-list {
+  list-style: none;
+}
+
+.price-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  padding: 0.55rem 0;
+  border-bottom: 1px dashed var(--gold-hairline);
+  font-size: 0.95rem;
+}
+
+.price-list li:last-child {
+  border-bottom: none;
+}
+
+.price-list li span:first-child {
+  color: var(--ink-soft);
+}
+
+.price-list li span:last-child {
+  color: var(--gold-dark);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 /* Hours */
 .hours {
   background: var(--cream-deep);
