@@ -5,10 +5,23 @@ CREATE TABLE IF NOT EXISTS services (
   name TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
   duration_min INTEGER NOT NULL,
+  price_cents INTEGER NOT NULL DEFAULT 0,
   buffer_before_min INTEGER NOT NULL DEFAULT 0,
   buffer_after_min INTEGER NOT NULL DEFAULT 0,
   active INTEGER NOT NULL DEFAULT 1,
   sort_order INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS staff (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE
+);
+
+-- Per-weekday seat capacity overrides; days without a row use the global
+-- 'capacity' setting.
+CREATE TABLE IF NOT EXISTS day_capacity (
+  dow INTEGER PRIMARY KEY CHECK (dow BETWEEN 0 AND 6),
+  capacity INTEGER NOT NULL CHECK (capacity >= 1)
 );
 
 -- Weekly opening hours. Multiple windows per day are allowed.
@@ -58,8 +71,9 @@ INSERT OR IGNORE INTO settings (key, value) VALUES
   ('capacity', '3'),
   ('slot_interval_min', '30'),
   ('min_notice_min', '60'),
-  ('max_days_ahead', '30'),
-  ('staff', 'Sue');
+  ('max_days_ahead', '30');
+
+INSERT OR IGNORE INTO staff (name) VALUES ('Sue');
 
 -- Default hours (Mon-Sat 9:00-20:00, Sun 9:00-18:00), seeded only when empty.
 INSERT INTO hours (dow, open_min, close_min)
@@ -74,12 +88,13 @@ SELECT column1, column2, column3 FROM (VALUES
 ) WHERE NOT EXISTS (SELECT 1 FROM hours);
 
 -- Starter services matching the website, seeded only when empty.
-INSERT INTO services (name, description, duration_min, buffer_before_min, buffer_after_min, sort_order)
-SELECT column1, column2, column3, column4, column5, column6 FROM (VALUES
-  ('Manicure', 'Hand care, shaping, and polish.', 30, 0, 10, 1),
-  ('Gel Manicure', 'High-shine, chip-resistant gel polish.', 45, 0, 10, 2),
-  ('Pink & White', 'Classic French tips.', 60, 0, 10, 3),
-  ('Acrylic Full Set', 'Durable, sculpted nails.', 75, 0, 15, 4),
-  ('Spa Pedicure', 'Foot soak, exfoliation, and massage.', 50, 0, 15, 5),
-  ('3D Nail Art', 'Custom designs with dimension and detail.', 90, 0, 15, 6)
+-- Prices are placeholders; set real ones in the admin.
+INSERT INTO services (name, description, duration_min, price_cents, buffer_before_min, buffer_after_min, sort_order)
+SELECT column1, column2, column3, column4, column5, column6, column7 FROM (VALUES
+  ('Manicure', 'Hand care, shaping, and polish.', 30, 2000, 0, 10, 1),
+  ('Gel Manicure', 'High-shine, chip-resistant gel polish.', 45, 3500, 0, 10, 2),
+  ('Pink & White', 'Classic French tips.', 60, 4500, 0, 10, 3),
+  ('Acrylic Full Set', 'Durable, sculpted nails.', 75, 5500, 0, 15, 4),
+  ('Spa Pedicure', 'Foot soak, exfoliation, and massage.', 50, 4000, 0, 15, 5),
+  ('3D Nail Art', 'Custom designs with dimension and detail.', 90, 6500, 0, 15, 6)
 ) WHERE NOT EXISTS (SELECT 1 FROM services);

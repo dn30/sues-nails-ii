@@ -1,5 +1,5 @@
 import { json, badRequest } from "./api.js";
-import { getSettings, putSettings, getHours } from "./db.js";
+import { getSettings, putSettings, getHours, getDayCapacity, listStaff } from "./db.js";
 import { parseYmd, wallToUtc, ymdInTz, fmtTimeInTz } from "./slots.js";
 
 export function checkAuth(request, env) {
@@ -121,10 +121,15 @@ function serviceFromBody(body) {
   const duration = parseInt(body.duration_min, 10);
   if (!name) return { error: "name is required" };
   if (!duration || duration < 5 || duration > 480) return { error: "duration_min must be 5-480" };
+  // Price arrives in dollars (e.g. "35" or "35.50"); stored as cents.
+  const priceDollars = parseFloat(body.price);
+  const priceCents = Number.isFinite(priceDollars) ? Math.round(priceDollars * 100) : 0;
+  if (priceCents < 0 || priceCents > 100000000) return { error: "price must be 0 or more" };
   return {
     name,
     description: String(body.description || "").trim(),
     duration_min: duration,
+    price_cents: priceCents,
     buffer_before_min: Math.max(0, parseInt(body.buffer_before_min, 10) || 0),
     buffer_after_min: Math.max(0, parseInt(body.buffer_after_min, 10) || 0),
     active: body.active === 0 || body.active === false ? 0 : 1,
@@ -142,10 +147,10 @@ export async function adminCreateService(env, request) {
   const s = serviceFromBody(body);
   if (s.error) return badRequest(s.error);
   const row = await env.DB.prepare(
-    `INSERT INTO services (name, description, duration_min, buffer_before_min, buffer_after_min, active, sort_order)
-     VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING *`
+    `INSERT INTO services (name, description, duration_min, price_cents, buffer_before_min, buffer_after_min, active, sort_order)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`
   )
-    .bind(s.name, s.description, s.duration_min, s.buffer_before_min, s.buffer_after_min, s.active, s.sort_order)
+    .bind(s.name, s.description, s.duration_min, s.price_cents, s.buffer_before_min, s.buffer_after_min, s.active, s.sort_order)
     .first();
   return json({ service: row }, 201);
 }
@@ -162,9 +167,9 @@ export async function adminUpdateService(env, id, request) {
   const s = serviceFromBody(body);
   if (s.error) return badRequest(s.error);
   await env.DB.prepare(
-    `UPDATE services SET name=?, description=?, duration_min=?, buffer_before_min=?, buffer_after_min=?, active=?, sort_order=? WHERE id=?`
+    `UPDATE services SET name=?, description=?, duration_min=?, price_cents=?, buffer_before_min=?, buffer_after_min=?, active=?, sort_order=? WHERE id=?`
   )
-    .bind(s.name, s.description, s.duration_min, s.buffer_before_min, s.buffer_after_min, s.active, s.sort_order, id)
+    .bind(s.name, s.description, s.duration_min, s.price_cents, s.buffer_before_min, s.buffer_after_min, s.active, s.sort_order, id)
     .run();
   return json({ ok: true });
 }
@@ -180,10 +185,36 @@ export async function adminDeleteService(env, id) {
   return json({ ok: true, deleted: true });
 }
 
-// ---- hours / closures / settings ----
+// ---- staff ----
+
+export async function adminListStaff(env) {
+  return json({ staff: await listStaff(env.DB) });
+}
+
+export async function adminCreateStaff(env, request) {
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return badRequest("Invalid JSON body");
+  }
+  const name = String(body.name || "").trim();
+  if (!name) return badRequest("name is required");
+  await env.DB.prepare("INSERT OR IGNORE INTO staff (name) VALUES (?)").bind(name).run();
+  return json({ staff: await listStaff(env.DB) }, 201);
+}
+
+export async function adminDeleteStaff(env, id) {
+  // Past bookings keep the name as plain text, so deleting staff is safe.
+  await env.DB.prepare("DELETE FROM staff WHERE id = ?").bind(id).run();
+  return json({ ok: true });
+}
+
+// ---- hours / day capacity / closures / settings ----
 
 export async function adminGetHours(env) {
-  return json({ hours: await getHours(env.DB) });
+  const [hours, dayCapacity] = await Promise.all([getHours(env.DB), getDayCapacity(env.DB)]);
+  return json({ hours, day_capacity: dayCapacity });
 }
 
 export async function adminPutHours(env, request) {
@@ -203,6 +234,18 @@ export async function adminPutHours(env, request) {
       return badRequest("Each row needs dow 0-6 and 0 <= open_min < close_min <= 1440");
     }
   }
+  // Optional day_capacity map: {"0": 2, "6": 4}; missing/empty values clear the override.
+  const capEntries = [];
+  if (body.day_capacity && typeof body.day_capacity === "object") {
+    for (const [k, v] of Object.entries(body.day_capacity)) {
+      const dow = parseInt(k, 10);
+      if (!(dow >= 0 && dow <= 6)) return badRequest("day_capacity keys must be dow 0-6");
+      if (v === null || v === "" || v === undefined) continue;
+      const cap = parseInt(v, 10);
+      if (!cap || cap < 1 || cap > 50) return badRequest("day_capacity values must be 1-50");
+      capEntries.push([dow, cap]);
+    }
+  }
   const stmts = [env.DB.prepare("DELETE FROM hours")];
   for (const r of rows) {
     stmts.push(
@@ -212,6 +255,12 @@ export async function adminPutHours(env, request) {
         parseInt(r.close_min, 10)
       )
     );
+  }
+  if (body.day_capacity && typeof body.day_capacity === "object") {
+    stmts.push(env.DB.prepare("DELETE FROM day_capacity"));
+    for (const [dow, cap] of capEntries) {
+      stmts.push(env.DB.prepare("INSERT INTO day_capacity (dow, capacity) VALUES (?, ?)").bind(dow, cap));
+    }
   }
   await env.DB.batch(stmts);
   return json({ ok: true });

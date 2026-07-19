@@ -39,6 +39,7 @@ small.hint{color:var(--muted)}
 <div class="tabs">
   <button data-tab="bookings" class="active">Bookings</button>
   <button data-tab="services">Services</button>
+  <button data-tab="staff">Staff</button>
   <button data-tab="hours">Hours &amp; Closures</button>
   <button data-tab="settings">Settings</button>
 </div>
@@ -48,6 +49,7 @@ small.hint{color:var(--muted)}
 "use strict";
 const app = document.getElementById("app");
 let SETTINGS = null;
+let STAFF = [];
 
 function api(path, opts) {
   return fetch(path, opts).then(async (r) => {
@@ -68,7 +70,11 @@ function timeToMin(t) {
   return h * 60 + m;
 }
 function staffList() {
-  return (SETTINGS?.staff || "").split(",").map((s) => s.trim()).filter(Boolean);
+  return STAFF.map((s) => s.name);
+}
+async function refreshStaff() {
+  const data = await api("/api/admin/staff");
+  STAFF = data.staff;
 }
 function showMsg(text, isErr) {
   const box = document.getElementById("msg");
@@ -80,6 +86,7 @@ function showMsg(text, isErr) {
 
 /* ---------- Bookings ---------- */
 async function viewBookings() {
+  await refreshStaff();
   const today = new Date().toISOString().slice(0, 10);
   const in14 = new Date(Date.now() + 14 * 864e5).toISOString().slice(0, 10);
   app.innerHTML = `
@@ -190,9 +197,11 @@ async function viewServices() {
 function serviceForm(s, onSave, onDelete) {
   const f = document.createElement("form");
   f.className = "row";
+  const priceVal = s.price_cents != null ? (s.price_cents / 100).toFixed(2).replace(/\.00$/, "") : "";
   f.innerHTML = `
-    <div><label>Name</label><input name="name" required value="${esc(s.name || "")}" style="width:170px"></div>
-    <div><label>Description</label><input name="description" value="${esc(s.description || "")}" style="width:220px"></div>
+    <div><label>Name</label><input name="name" required value="${esc(s.name || "")}" style="width:150px"></div>
+    <div><label>Description</label><input name="description" value="${esc(s.description || "")}" style="width:190px"></div>
+    <div><label>Price ($)</label><input name="price" type="number" min="0" step="0.01" value="${priceVal}" style="width:85px"></div>
     <div><label>Duration (min)</label><input name="duration_min" type="number" min="5" max="480" required value="${s.duration_min || 30}" style="width:90px"></div>
     <div><label>Buffer before</label><input name="buffer_before_min" type="number" min="0" value="${s.buffer_before_min || 0}" style="width:80px"></div>
     <div><label>Buffer after</label><input name="buffer_after_min" type="number" min="0" value="${s.buffer_after_min || 0}" style="width:80px"></div>
@@ -211,17 +220,56 @@ function serviceForm(s, onSave, onDelete) {
   return f;
 }
 
+/* ---------- Staff ---------- */
+async function viewStaff() {
+  app.innerHTML = `<div id="msg" class="msg"></div>
+    <p><small class="hint">Employees listed here appear in the “assigned to” dropdown on bookings. Removing one keeps their name on past bookings.</small></p>
+    <div id="staff-list" style="margin-top:1rem">Loading…</div>
+    <div class="row" style="margin-top:1rem">
+      <div><label>Name</label><input id="staff-name" placeholder="e.g. Mia"></div>
+      <button class="btn" id="staff-add">Add employee</button>
+    </div>`;
+  await load();
+
+  async function load() {
+    await refreshStaff();
+    const div = document.getElementById("staff-list");
+    div.innerHTML = STAFF.length
+      ? STAFF.map((s) => `<div class="row" style="margin-bottom:.25rem"><div style="width:220px">${esc(s.name)}</div>
+          <button class="btn danger" type="button" data-id="${s.id}">Remove</button></div>`).join("")
+      : "<p><small class='hint'>No employees yet.</small></p>";
+    div.querySelectorAll("[data-id]").forEach((b) => {
+      b.onclick = async () => {
+        if (!confirm("Remove this employee from the list?")) return;
+        try { await api(`/api/admin/staff/${b.dataset.id}`, { method: "DELETE" }); load(); }
+        catch (e) { showMsg(e.message, true); }
+      };
+    });
+  }
+  document.getElementById("staff-add").onclick = async () => {
+    const name = document.getElementById("staff-name").value.trim();
+    if (!name) return showMsg("Enter a name", true);
+    try {
+      await api("/api/admin/staff", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
+      document.getElementById("staff-name").value = "";
+      showMsg("Employee added.");
+      load();
+    } catch (e) { showMsg(e.message, true); }
+  };
+}
+
 /* ---------- Hours & closures ---------- */
 async function viewHours() {
   app.innerHTML = `<div id="msg" class="msg"></div>
-    <h2 style="margin-top:0">Weekly hours</h2>
-    <p><small class="hint">Leave a day blank (no rows) to close that day. Times are salon-local.</small></p>
+    <h2 style="margin-top:0">Weekly hours &amp; seats</h2>
+    <p><small class="hint">Leave a day blank (no windows) to close that day. “Seats” is how many customers can be served at once that day — blank uses the default from Settings. Times are salon-local.</small></p>
     <div id="hours">Loading…</div>
     <h2>Closures (holidays)</h2><div id="closures">Loading…</div>`;
   const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
   const data = await api("/api/admin/hours");
   let rows = data.hours;
+  let dayCap = data.day_capacity || {};
   const hoursDiv = document.getElementById("hours");
   drawHours();
 
@@ -237,14 +285,17 @@ async function viewHours() {
             <button class="btn danger" type="button" data-rm="${r.i}">×</button>
           </span>`).join("")}
         <button class="btn secondary" type="button" data-add="${dow}">+ window</button>
+        <span><label style="display:inline">Seats</label>
+          <input type="number" class="daycap" data-dow="${dow}" min="1" max="50" placeholder="default"
+            value="${dayCap[dow] ?? ""}" style="width:75px"></span>
       </div>`;
-    }).join("") + `<button class="btn" id="save-hours">Save hours</button>`;
+    }).join("") + `<button class="btn" id="save-hours">Save hours &amp; seats</button>`;
 
     hoursDiv.querySelectorAll("[data-add]").forEach((b) => {
-      b.onclick = () => { rows.push({ dow: +b.dataset.add, open_min: 540, close_min: 1200 }); drawHours(); };
+      b.onclick = () => { captureDayCap(); rows.push({ dow: +b.dataset.add, open_min: 540, close_min: 1200 }); drawHours(); };
     });
     hoursDiv.querySelectorAll("[data-rm]").forEach((b) => {
-      b.onclick = () => { rows.splice(+b.dataset.rm, 1); drawHours(); };
+      b.onclick = () => { captureDayCap(); rows.splice(+b.dataset.rm, 1); drawHours(); };
     });
     document.getElementById("save-hours").onclick = async () => {
       hoursDiv.querySelectorAll("span[data-i]").forEach((span) => {
@@ -252,9 +303,19 @@ async function viewHours() {
         rows[i].open_min = timeToMin(span.querySelector(".open").value);
         rows[i].close_min = timeToMin(span.querySelector(".close").value);
       });
-      try { await api("/api/admin/hours", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ hours: rows }) }); showMsg("Hours saved."); }
-      catch (e) { showMsg(e.message, true); }
+      captureDayCap();
+      try {
+        await api("/api/admin/hours", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ hours: rows, day_capacity: dayCap }) });
+        showMsg("Hours & seats saved.");
+      } catch (e) { showMsg(e.message, true); }
     };
+  }
+
+  function captureDayCap() {
+    dayCap = {};
+    hoursDiv.querySelectorAll(".daycap").forEach((inp) => {
+      if (inp.value) dayCap[inp.dataset.dow] = parseInt(inp.value, 10);
+    });
   }
 
   await loadClosures();
@@ -290,11 +351,10 @@ async function viewSettings() {
   const s = data.settings;
   app.innerHTML = `<div id="msg" class="msg"></div>
     <form id="sform" class="grid2">
-      <div><label>Seats (max customers at once)</label><input name="capacity" type="number" min="1" max="50" value="${s.capacity}"><br><small class="hint">Set to 1 for a strict single-seat schedule.</small></div>
+      <div><label>Default seats (max customers at once)</label><input name="capacity" type="number" min="1" max="50" value="${s.capacity}"><br><small class="hint">Set to 1 for a strict single-seat schedule. Override per day in Hours &amp; Closures.</small></div>
       <div><label>Slot grid (minutes)</label><input name="slot_interval_min" type="number" min="5" max="120" value="${s.slot_interval_min}"><br><small class="hint">Appointments can start every N minutes.</small></div>
       <div><label>Minimum notice (minutes)</label><input name="min_notice_min" type="number" min="0" value="${s.min_notice_min}"></div>
       <div><label>Booking window (days ahead)</label><input name="max_days_ahead" type="number" min="1" max="365" value="${s.max_days_ahead}"></div>
-      <div><label>Staff (comma-separated)</label><input name="staff" value="${esc(s.staff)}"><br><small class="hint">Used for the “assigned to” dropdown on bookings.</small></div>
       <div><label>Timezone</label><input name="timezone" value="${esc(s.timezone)}"><br><small class="hint">IANA name, e.g. America/Los_Angeles.</small></div>
     </form>
     <p style="margin-top:1rem"><button class="btn" id="save">Save settings</button></p>`;
@@ -309,7 +369,7 @@ async function viewSettings() {
 }
 
 /* ---------- boot ---------- */
-const views = { bookings: viewBookings, services: viewServices, hours: viewHours, settings: viewSettings };
+const views = { bookings: viewBookings, services: viewServices, staff: viewStaff, hours: viewHours, settings: viewSettings };
 document.querySelectorAll(".tabs button").forEach((b) => {
   b.onclick = () => {
     document.querySelectorAll(".tabs button").forEach((x) => x.classList.remove("active"));

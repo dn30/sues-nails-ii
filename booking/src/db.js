@@ -4,7 +4,6 @@ const SETTING_DEFAULTS = {
   slot_interval_min: 30,
   min_notice_min: 60,
   max_days_ahead: 30,
-  staff: "",
 };
 
 const NUMERIC_SETTINGS = ["capacity", "slot_interval_min", "min_notice_min", "max_days_ahead"];
@@ -44,6 +43,19 @@ export async function listServices(db, { activeOnly = false } = {}) {
 
 export async function getHours(db) {
   const { results } = await db.prepare("SELECT dow, open_min, close_min FROM hours ORDER BY dow, open_min").all();
+  return results;
+}
+
+// Map of dow -> seat capacity override (days without a row use settings.capacity).
+export async function getDayCapacity(db) {
+  const { results } = await db.prepare("SELECT dow, capacity FROM day_capacity").all();
+  const map = {};
+  for (const r of results) map[r.dow] = r.capacity;
+  return map;
+}
+
+export async function listStaff(db) {
+  const { results } = await db.prepare("SELECT id, name FROM staff ORDER BY name").all();
   return results;
 }
 

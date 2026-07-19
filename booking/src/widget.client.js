@@ -24,8 +24,11 @@
     ".snb-service:hover{border-color:var(--snb-gold)}",
     ".snb-service.snb-selected{border-color:var(--snb-gold-dark);box-shadow:0 0 0 1px var(--snb-gold-dark)}",
     ".snb-service-name{font-weight:600}",
-    ".snb-service-meta{font-size:.8rem;color:var(--snb-muted)}",
+    ".snb-service-meta{font-size:.85rem;color:var(--snb-soft);margin-top:.15rem}",
+    ".snb-service-desc{font-size:.8rem;color:var(--snb-muted);margin-top:.15rem}",
+    ".snb-price{color:var(--snb-gold-dark);font-weight:600}",
     ".snb-days,.snb-times{display:flex;flex-wrap:wrap;gap:.5rem}",
+    ".snb-timegroup{margin:.75rem 0 .25rem;font-size:.75rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--snb-muted)}",
     ".snb-chip{border:1px solid var(--snb-hairline);background:var(--snb-white);border-radius:999px;padding:.45rem .9rem;font:inherit;font-size:.88rem;cursor:pointer;transition:border-color .15s}",
     ".snb-chip:hover{border-color:var(--snb-gold)}",
     ".snb-chip.snb-selected{background:var(--snb-ink);color:var(--snb-cream);border-color:var(--snb-ink)}",
@@ -88,6 +91,11 @@
     return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
   }
 
+  function fmtPrice(cents) {
+    if (!cents) return "";
+    return cents % 100 === 0 ? "$" + cents / 100 : "$" + (cents / 100).toFixed(2);
+  }
+
   function ymd(d) {
     var m = String(d.getMonth() + 1).padStart(2, "0");
     var day = String(d.getDate()).padStart(2, "0");
@@ -113,7 +121,13 @@
         },
       });
       btn.appendChild(el("div", { class: "snb-service-name", text: s.name }));
-      btn.appendChild(el("div", { class: "snb-service-meta", text: s.duration_min + " min" + (s.description ? " · " + s.description : "") }));
+      var meta = el("div", { class: "snb-service-meta", text: s.duration_min + " min" });
+      if (s.price_cents) {
+        meta.appendChild(document.createTextNode(" · "));
+        meta.appendChild(el("span", { class: "snb-price", text: fmtPrice(s.price_cents) }));
+      }
+      btn.appendChild(meta);
+      if (s.description) btn.appendChild(el("div", { class: "snb-service-desc", text: s.description }));
       list.appendChild(btn);
     });
     root.appendChild(list);
@@ -157,21 +171,38 @@
       root.appendChild(el("p", { class: "snb-note", text: "No times available that day — try another day." }));
       return;
     }
-    var times = el("div", { class: "snb-times" });
-    state.slots.forEach(function (s) {
-      times.appendChild(
-        el("button", {
-          class: "snb-chip" + (state.slot && state.slot.start_ts === s.start_ts ? " snb-selected" : ""),
-          type: "button",
-          text: s.label,
-          onclick: function () {
-            state.slot = s;
-            render();
-          },
-        })
-      );
+    // Group time chips into morning / afternoon / evening for readability.
+    var groups = [
+      { name: "Morning", test: function (h) { return h < 12; } },
+      { name: "Afternoon", test: function (h) { return h >= 12 && h < 17; } },
+      { name: "Evening", test: function (h) { return h >= 17; } },
+    ];
+    groups.forEach(function (g) {
+      var inGroup = state.slots.filter(function (s) {
+        var m = /^(\d+):\d+\s*(AM|PM)$/i.exec(s.label);
+        if (!m) return g.name === "Morning";
+        var h = (+m[1] % 12) + (m[2].toUpperCase() === "PM" ? 12 : 0);
+        return g.test(h);
+      });
+      if (!inGroup.length) return;
+      root.appendChild(el("p", { class: "snb-timegroup", text: g.name }));
+      var times = el("div", { class: "snb-times" });
+      inGroup.forEach(function (s) {
+        var labelText = s.label + (s.remaining < state.capacity && s.remaining <= 2 ? " · " + s.remaining + " left" : "");
+        times.appendChild(
+          el("button", {
+            class: "snb-chip" + (state.slot && state.slot.start_ts === s.start_ts ? " snb-selected" : ""),
+            type: "button",
+            text: labelText,
+            onclick: function () {
+              state.slot = s;
+              render();
+            },
+          })
+        );
+      });
+      root.appendChild(times);
     });
-    root.appendChild(times);
 
     if (!state.slot) return;
 
@@ -180,14 +211,18 @@
     var form = el("form", { class: "snb-form" });
     var maxParty = Math.min(state.slot.remaining, state.capacity);
     var partyWrap = el("div");
-    partyWrap.appendChild(el("label", { for: "snb-party", text: "How many people?" }));
+    partyWrap.appendChild(el("label", { for: "snb-party", text: "Booking for how many people?" }));
     var partySel = el("select", { id: "snb-party", name: "party" });
     for (var p = 1; p <= maxParty; p++) {
-      var opt = el("option", { value: String(p), text: p === 1 ? "Just me" : p + " people" });
+      var priceSuffix = state.service.price_cents ? " — " + fmtPrice(state.service.price_cents * p) : "";
+      var opt = el("option", { value: String(p), text: (p === 1 ? "Just me" : p + " people, same service together") + priceSuffix });
       if (p === state.party) opt.selected = true;
       partySel.appendChild(opt);
     }
     partyWrap.appendChild(partySel);
+    if (maxParty > 1) {
+      partyWrap.appendChild(el("div", { class: "snb-note", text: "Booking for a group reserves side-by-side seats at the same time." }));
+    }
     form.appendChild(partyWrap);
 
     [
@@ -253,6 +288,9 @@
     var p1 = el("p");
     p1.appendChild(document.createTextNode(booking.service + " · " + booking.label + (booking.party_size > 1 ? " · " + booking.party_size + " people" : "")));
     box.appendChild(p1);
+    if (booking.total_cents) {
+      box.appendChild(el("p", { class: "snb-note", text: "Estimated total: " + fmtPrice(booking.total_cents) + " (pay at the salon)" }));
+    }
     var p2 = el("p");
     p2.appendChild(document.createTextNode("Confirmation code: "));
     p2.appendChild(el("span", { class: "snb-code", text: booking.code }));

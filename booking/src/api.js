@@ -3,6 +3,7 @@ import {
   getService,
   listServices,
   getHours,
+  getDayCapacity,
   isClosed,
   bookingsInWindow,
   newBookingCode,
@@ -13,6 +14,7 @@ import {
   wallToUtc,
   fmtTimeInTz,
   ymdInTz,
+  dowOfDate,
   maxConcurrentSeats,
 } from "./slots.js";
 
@@ -31,6 +33,12 @@ export function badRequest(message) {
   return json({ error: message }, 400);
 }
 
+// Seat capacity effective on a given local date (per-weekday override or global).
+export function capacityForDate(settings, dayCapacity, date) {
+  const dow = dowOfDate(date.y, date.m, date.d);
+  return dayCapacity[dow] ?? settings.capacity;
+}
+
 async function slotsForDate(db, service, dateStr, settings, now) {
   const date = parseYmd(dateStr);
   if (!date) return { error: "Invalid date, expected YYYY-MM-DD" };
@@ -39,15 +47,29 @@ async function slotsForDate(db, service, dateStr, settings, now) {
   const todayStr = ymdInTz(tz, now);
   const maxTs = now + settings.max_days_ahead * 86400000;
   const maxStr = ymdInTz(tz, maxTs);
-  if (dateStr < todayStr || dateStr > maxStr) return { slots: [] };
+  if (dateStr < todayStr || dateStr > maxStr) return { slots: [], capacity: settings.capacity };
 
-  const [hours, closed] = await Promise.all([getHours(db), isClosed(db, dateStr)]);
+  const [hours, closed, dayCapacity] = await Promise.all([
+    getHours(db),
+    isClosed(db, dateStr),
+    getDayCapacity(db),
+  ]);
+  const capacity = capacityForDate(settings, dayCapacity, date);
   // Fetch bookings in a generous window around the local day (+/- 1 day handles tz edges).
   const dayStart = wallToUtc(tz, date.y, date.m, date.d, 0);
   const bookings = await bookingsInWindow(db, dayStart - 86400000, dayStart + 2 * 86400000);
 
-  const slots = computeSlots({ service, date, settings, hours, closed, bookings, now });
+  const slots = computeSlots({
+    service,
+    date,
+    settings: { ...settings, capacity },
+    hours,
+    closed,
+    bookings,
+    now,
+  });
   return {
+    capacity,
     slots: slots.map((s) => ({
       start: new Date(s.start_ts).toISOString(),
       start_ts: s.start_ts,
@@ -65,6 +87,7 @@ export async function handleListServices(env) {
       name: s.name,
       description: s.description,
       duration_min: s.duration_min,
+      price_cents: s.price_cents,
     })),
   });
 }
@@ -81,7 +104,7 @@ export async function handleAvailability(env, url) {
   const settings = await getSettings(env.DB);
   const result = await slotsForDate(env.DB, service, dateStr, settings, Date.now());
   if (result.error) return badRequest(result.error);
-  return json({ service_id: serviceId, date: dateStr, capacity: settings.capacity, ...result });
+  return json({ service_id: serviceId, date: dateStr, ...result });
 }
 
 export async function handleCreateBooking(env, request) {
@@ -109,9 +132,6 @@ export async function handleCreateBooking(env, request) {
   if (!service) return json({ error: "Service not found" }, 404);
 
   const settings = await getSettings(env.DB);
-  if (partySize > settings.capacity) {
-    return badRequest(`Party size cannot exceed ${settings.capacity}`);
-  }
 
   // The requested start must be one of the currently valid slots (right grid,
   // inside hours, not closed, enough seats).
@@ -119,6 +139,10 @@ export async function handleCreateBooking(env, request) {
   const dateStr = ymdInTz(settings.timezone, startTs);
   const result = await slotsForDate(env.DB, service, dateStr, settings, now);
   if (result.error) return badRequest(result.error);
+  const capacity = result.capacity;
+  if (partySize > capacity) {
+    return badRequest(`Party size cannot exceed ${capacity}`);
+  }
   const slot = (result.slots || []).find((s) => s.start_ts === startTs);
   if (!slot) return json({ error: "That time is not available" }, 409);
   if (slot.remaining < partySize) {
@@ -143,7 +167,7 @@ export async function handleCreateBooking(env, request) {
   // pre-check (D1 is single-writer, so the last verifier sees all inserts).
   const overlapping = await bookingsInWindow(env.DB, blockStart, blockEnd);
   const peak = maxConcurrentSeats(overlapping, blockStart, blockEnd);
-  if (peak > settings.capacity) {
+  if (peak > capacity) {
     await env.DB.prepare("DELETE FROM bookings WHERE id = ?").bind(inserted.id).run();
     return json({ error: "That time was just booked by someone else. Please pick another." }, 409);
   }
@@ -156,6 +180,7 @@ export async function handleCreateBooking(env, request) {
         start: new Date(startTs).toISOString(),
         label: `${dateStr} ${fmtTimeInTz(settings.timezone, startTs)}`,
         party_size: partySize,
+        total_cents: service.price_cents * partySize,
       },
     },
     201

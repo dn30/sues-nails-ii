@@ -8,6 +8,9 @@ import {
   adminCreateService,
   adminUpdateService,
   adminDeleteService,
+  adminListStaff,
+  adminCreateStaff,
+  adminDeleteStaff,
   adminGetHours,
   adminPutHours,
   adminListClosures,
@@ -75,6 +78,11 @@ export default {
         m = path.match(/^\/api\/admin\/services\/(\d+)$/);
         if (m && method === "PUT") return adminUpdateService(env, +m[1], request);
         if (m && method === "DELETE") return adminDeleteService(env, +m[1]);
+
+        if (method === "GET" && path === "/api/admin/staff") return adminListStaff(env);
+        if (method === "POST" && path === "/api/admin/staff") return adminCreateStaff(env, request);
+        m = path.match(/^\/api\/admin\/staff\/(\d+)$/);
+        if (m && method === "DELETE") return adminDeleteStaff(env, +m[1]);
 
         if (method === "GET" && path === "/api/admin/hours") return adminGetHours(env);
         if (method === "PUT" && path === "/api/admin/hours") return adminPutHours(env, request);

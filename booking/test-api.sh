@@ -15,9 +15,10 @@ jqget() { python3 -c "import json,sys; d=json.load(sys.stdin); print(eval(sys.ar
 
 echo "== Testing against $BASE on date $DATE =="
 
-# 1. Services list
-n=$(curl -s "$BASE/api/services" | jqget "len(d['services'])")
-check "6 active services listed" "6" "$n"
+# 1. Services list with prices
+svc=$(curl -s "$BASE/api/services")
+check "6 active services listed" "6" "$(echo "$svc" | jqget "len(d['services'])")"
+check "services include price" "2000" "$(echo "$svc" | jqget "d['services'][0]['price_cents']")"
 
 # 2. Availability: first slot 9:00 AM, remaining 3
 avail=$(curl -s "$BASE/api/availability?service_id=1&date=$DATE")
@@ -25,10 +26,11 @@ check "first slot is 9:00 AM" "9:00 AM" "$(echo "$avail" | jqget "d['slots'][0][
 check "capacity 3 seats remaining" "3" "$(echo "$avail" | jqget "d['slots'][0]['remaining']")"
 START=$(echo "$avail" | jqget "d['slots'][0]['start']")
 
-# 3. Group booking (2 seats)
+# 3. Group booking (2 seats) with computed total
 r=$(curl -s -X POST "$BASE/api/bookings" -H 'Content-Type: application/json' \
   -d "{\"service_id\":1,\"start\":\"$START\",\"party_size\":2,\"name\":\"Alice\",\"phone\":\"909-555-0001\"}")
 check "group booking of 2 created" "Manicure" "$(echo "$r" | jqget "d['booking']['service']")"
+check "group booking total is 2x price" "4000" "$(echo "$r" | jqget "d['booking']['total_cents']")"
 
 # 4. Remaining drops to 1
 rem=$(curl -s "$BASE/api/availability?service_id=1&date=$DATE" | jqget "d['slots'][0]['remaining']")
@@ -108,7 +110,33 @@ check "update service" "True" "$(echo "$r" | jqget "d['ok']")"
 r=$(curl -s -u "$AUTH" -X DELETE "$BASE/api/admin/services/$sid")
 check "delete unused service" "True" "$(echo "$r" | jqget "d['deleted']")"
 
-# 14. Sunday hours end earlier: last manicure slot 5:30 PM (close 6 PM)
+# 14. Staff management
+r=$(curl -s -u "$AUTH" "$BASE/api/admin/staff")
+check "seeded staff Sue present" "Sue" "$(echo "$r" | jqget "d['staff'][0]['name']")"
+r=$(curl -s -u "$AUTH" -X POST "$BASE/api/admin/staff" -H 'Content-Type: application/json' -d '{"name":"Mia"}')
+check "employee added" "2" "$(echo "$r" | jqget "len(d['staff'])")"
+mia_id=$(echo "$r" | jqget "[s for s in d['staff'] if s['name']=='Mia'][0]['id']")
+curl -s -u "$AUTH" -X DELETE "$BASE/api/admin/staff/$mia_id" > /dev/null
+n=$(curl -s -u "$AUTH" "$BASE/api/admin/staff" | jqget "len(d['staff'])")
+check "employee removed" "1" "$n"
+
+# 15. Per-day capacity override
+DATE4=$(TZ=America/Los_Angeles date -d "+5 days" +%F)
+DOW4=$(TZ=America/Los_Angeles date -d "+5 days" +%w)
+hours_json=$(curl -s -u "$AUTH" "$BASE/api/admin/hours" | python3 -c "import json,sys; d=json.load(sys.stdin); print(json.dumps(d['hours']))")
+curl -s -u "$AUTH" -X PUT "$BASE/api/admin/hours" -H 'Content-Type: application/json' \
+  -d "{\"hours\":$hours_json,\"day_capacity\":{\"$DOW4\":1}}" > /dev/null
+cap=$(curl -s "$BASE/api/availability?service_id=1&date=$DATE4" | jqget "d['capacity']")
+check "day capacity override applies" "1" "$cap"
+code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/bookings" -H 'Content-Type: application/json' \
+  -d "{\"service_id\":1,\"start\":\"$(curl -s "$BASE/api/availability?service_id=1&date=$DATE4" | jqget "d['slots'][0]['start']")\",\"party_size\":2,\"name\":\"Gia\",\"phone\":\"909-555-0007\"}")
+check "party of 2 rejected on 1-seat day" "400" "$code"
+curl -s -u "$AUTH" -X PUT "$BASE/api/admin/hours" -H 'Content-Type: application/json' \
+  -d "{\"hours\":$hours_json,\"day_capacity\":{}}" > /dev/null
+cap=$(curl -s "$BASE/api/availability?service_id=1&date=$DATE4" | jqget "d['capacity']")
+check "clearing override restores default capacity" "3" "$cap"
+
+# 16. Sunday hours end earlier: last manicure slot 5:30 PM (close 6 PM)
 SUN=$(TZ=America/Los_Angeles python3 -c "
 from datetime import date, timedelta
 d = date.today() + timedelta(days=2)
