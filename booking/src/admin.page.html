@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Sue's Nails — Booking Admin</title>
+<style>
+:root{--ink:#262016;--soft:#57503f;--muted:#8a8171;--gold:#a8842c;--gold-dark:#8c6d20;--hairline:rgba(168,132,44,.28);--cream:#faf6ef;--white:#fff;--green:#2e7d4f;--red:#a33}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,sans-serif;background:var(--cream);color:var(--ink);line-height:1.5;padding:1.5rem}
+h1{font-size:1.3rem;margin-bottom:1rem}
+h2{font-size:1.05rem;margin:1.5rem 0 .75rem}
+.tabs{display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1.25rem}
+.tabs button{font:inherit;border:1px solid var(--hairline);background:var(--white);border-radius:999px;padding:.45rem 1.1rem;cursor:pointer}
+.tabs button.active{background:var(--ink);color:var(--cream);border-color:var(--ink)}
+.panel{background:var(--white);border:1px solid var(--hairline);border-radius:8px;padding:1.25rem;max-width:1080px}
+table{border-collapse:collapse;width:100%;font-size:.9rem}
+th,td{text-align:left;padding:.5rem .6rem;border-bottom:1px solid var(--hairline);vertical-align:middle}
+th{font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+input,select,textarea{font:inherit;padding:.45rem .6rem;border:1px solid var(--hairline);border-radius:6px;background:var(--white);color:var(--ink);max-width:100%}
+button.btn{font:inherit;border:none;background:var(--ink);color:var(--cream);border-radius:999px;padding:.45rem 1.1rem;cursor:pointer}
+button.btn:hover{background:var(--gold-dark)}
+button.btn.secondary{background:transparent;color:var(--ink);border:1px solid var(--ink)}
+button.btn.danger{background:transparent;color:var(--red);border:1px solid var(--red)}
+.row{display:flex;gap:.75rem;flex-wrap:wrap;align-items:end;margin-bottom:1rem}
+.row label{display:block;font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:.2rem}
+.cancelled{opacity:.5;text-decoration:line-through}
+.pill{display:inline-block;border-radius:999px;padding:.1rem .6rem;font-size:.75rem;background:rgba(46,125,79,.12);color:var(--green)}
+.pill.off{background:rgba(170,51,51,.1);color:var(--red)}
+.msg{margin:.75rem 0;font-size:.9rem;color:var(--green)}
+.msg.err{color:var(--red)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1rem}
+small.hint{color:var(--muted)}
+</style>
+</head>
+<body>
+<h1>Sue&rsquo;s Nails — Booking Admin</h1>
+<div class="tabs">
+  <button data-tab="bookings" class="active">Bookings</button>
+  <button data-tab="services">Services</button>
+  <button data-tab="hours">Hours &amp; Closures</button>
+  <button data-tab="settings">Settings</button>
+</div>
+<div id="app" class="panel">Loading…</div>
+
+<script>
+"use strict";
+const app = document.getElementById("app");
+let SETTINGS = null;
+
+function api(path, opts) {
+  return fetch(path, opts).then(async (r) => {
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
+    return data;
+  });
+}
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+function minToTime(min) {
+  const h = Math.floor(min / 60), m = min % 60;
+  return String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0");
+}
+function timeToMin(t) {
+  const [h, m] = (t || "0:0").split(":").map(Number);
+  return h * 60 + m;
+}
+function staffList() {
+  return (SETTINGS?.staff || "").split(",").map((s) => s.trim()).filter(Boolean);
+}
+function showMsg(text, isErr) {
+  const box = document.getElementById("msg");
+  if (!box) return alert(text);
+  box.textContent = text;
+  box.className = "msg" + (isErr ? " err" : "");
+  setTimeout(() => { if (box.textContent === text) box.textContent = ""; }, 4000);
+}
+
+/* ---------- Bookings ---------- */
+async function viewBookings() {
+  const today = new Date().toISOString().slice(0, 10);
+  const in14 = new Date(Date.now() + 14 * 864e5).toISOString().slice(0, 10);
+  app.innerHTML = `
+    <div class="row">
+      <div><label>From</label><input type="date" id="from" value="${today}"></div>
+      <div><label>To</label><input type="date" id="to" value="${in14}"></div>
+      <div><label>&nbsp;</label><label><input type="checkbox" id="inc-cancelled" style="width:auto"> show cancelled</label></div>
+      <button class="btn" id="reload">Refresh</button>
+    </div>
+    <div id="msg" class="msg"></div>
+    <div id="list">Loading…</div>`;
+  document.getElementById("reload").onclick = loadBookings;
+  document.getElementById("inc-cancelled").onchange = loadBookings;
+  await loadBookings();
+
+  async function loadBookings() {
+    const from = document.getElementById("from").value;
+    const to = document.getElementById("to").value;
+    const inc = document.getElementById("inc-cancelled").checked ? "&include_cancelled=1" : "";
+    const list = document.getElementById("list");
+    list.textContent = "Loading…";
+    try {
+      const data = await api(`/api/admin/bookings?from=${from}&to=${to}${inc}`);
+      if (!data.bookings.length) { list.innerHTML = "<p>No bookings in this range.</p>"; return; }
+      const staff = staffList();
+      list.innerHTML = `<table><thead><tr>
+        <th>When</th><th>Service</th><th>Customer</th><th>Party</th><th>Assigned to</th><th>Status</th><th></th>
+      </tr></thead><tbody>` + data.bookings.map((b) => `
+        <tr class="${b.status === "cancelled" ? "cancelled" : ""}" data-id="${b.id}">
+          <td>${esc(b.date)}<br><strong>${esc(b.time)}</strong></td>
+          <td>${esc(b.service)}<br><small class="hint">${esc(b.code)}</small></td>
+          <td>${esc(b.customer_name)}<br><small class="hint">${esc(b.customer_phone)}${b.customer_email ? " · " + esc(b.customer_email) : ""}</small>${b.notes ? `<br><small class="hint">“${esc(b.notes)}”</small>` : ""}</td>
+          <td>${b.party_size}</td>
+          <td><select class="assign">
+            <option value="">— unassigned —</option>
+            ${staff.map((s) => `<option value="${esc(s)}" ${b.assigned_to === s ? "selected" : ""}>${esc(s)}</option>`).join("")}
+            ${b.assigned_to && !staff.includes(b.assigned_to) ? `<option value="${esc(b.assigned_to)}" selected>${esc(b.assigned_to)}</option>` : ""}
+          </select></td>
+          <td><span class="pill ${b.status === "cancelled" ? "off" : ""}">${esc(b.status)}</span></td>
+          <td>${b.status === "confirmed"
+            ? `<button class="btn danger cancel">Cancel</button>`
+            : `<button class="btn secondary restore">Restore</button>`}</td>
+        </tr>`).join("") + "</tbody></table>";
+
+      list.querySelectorAll(".assign").forEach((sel) => {
+        sel.onchange = async () => {
+          const id = sel.closest("tr").dataset.id;
+          try { await api(`/api/admin/bookings/${id}`, patch({ assigned_to: sel.value })); showMsg("Assigned."); }
+          catch (e) { showMsg(e.message, true); }
+        };
+      });
+      list.querySelectorAll(".cancel").forEach((btn) => {
+        btn.onclick = async () => {
+          if (!confirm("Cancel this booking?")) return;
+          const id = btn.closest("tr").dataset.id;
+          try { await api(`/api/admin/bookings/${id}`, patch({ status: "cancelled" })); loadBookings(); }
+          catch (e) { showMsg(e.message, true); }
+        };
+      });
+      list.querySelectorAll(".restore").forEach((btn) => {
+        btn.onclick = async () => {
+          const id = btn.closest("tr").dataset.id;
+          try { await api(`/api/admin/bookings/${id}`, patch({ status: "confirmed" })); loadBookings(); }
+          catch (e) { showMsg(e.message, true); }
+        };
+      });
+    } catch (e) {
+      list.innerHTML = `<p class="msg err">${esc(e.message)}</p>`;
+    }
+  }
+}
+function patch(body) {
+  return { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+}
+
+/* ---------- Services ---------- */
+async function viewServices() {
+  app.innerHTML = `<div id="msg" class="msg"></div><div id="list">Loading…</div>
+    <h2>Add a service</h2><div id="create"></div>`;
+  document.getElementById("create").appendChild(serviceForm({}, async (body) => {
+    await api("/api/admin/services", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    showMsg("Service created."); load();
+  }));
+  await load();
+
+  async function load() {
+    const list = document.getElementById("list");
+    try {
+      const data = await api("/api/admin/services");
+      list.innerHTML = "";
+      data.services.forEach((s) => {
+        const wrap = document.createElement("div");
+        wrap.style.borderBottom = "1px solid var(--hairline)";
+        wrap.style.padding = ".75rem 0";
+        wrap.appendChild(serviceForm(s, async (body) => {
+          await api(`/api/admin/services/${s.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+          showMsg("Saved."); load();
+        }, async () => {
+          if (!confirm(`Delete "${s.name}"? (Services with bookings are deactivated instead.)`)) return;
+          await api(`/api/admin/services/${s.id}`, { method: "DELETE" });
+          showMsg("Removed."); load();
+        }));
+        list.appendChild(wrap);
+      });
+    } catch (e) { list.innerHTML = `<p class="msg err">${esc(e.message)}</p>`; }
+  }
+}
+function serviceForm(s, onSave, onDelete) {
+  const f = document.createElement("form");
+  f.className = "row";
+  f.innerHTML = `
+    <div><label>Name</label><input name="name" required value="${esc(s.name || "")}" style="width:170px"></div>
+    <div><label>Description</label><input name="description" value="${esc(s.description || "")}" style="width:220px"></div>
+    <div><label>Duration (min)</label><input name="duration_min" type="number" min="5" max="480" required value="${s.duration_min || 30}" style="width:90px"></div>
+    <div><label>Buffer before</label><input name="buffer_before_min" type="number" min="0" value="${s.buffer_before_min || 0}" style="width:80px"></div>
+    <div><label>Buffer after</label><input name="buffer_after_min" type="number" min="0" value="${s.buffer_after_min || 0}" style="width:80px"></div>
+    <div><label>Order</label><input name="sort_order" type="number" value="${s.sort_order || 0}" style="width:70px"></div>
+    <div><label>Active</label><select name="active" style="width:80px"><option value="1" ${s.active !== 0 ? "selected" : ""}>Yes</option><option value="0" ${s.active === 0 ? "selected" : ""}>No</option></select></div>
+    <button class="btn" type="submit">${s.id ? "Save" : "Add"}</button>
+    ${onDelete ? '<button class="btn danger" type="button" data-del>Delete</button>' : ""}`;
+  f.onsubmit = async (e) => {
+    e.preventDefault();
+    const fd = new FormData(f);
+    const body = Object.fromEntries(fd.entries());
+    body.active = parseInt(body.active, 10);
+    try { await onSave(body); } catch (err) { showMsg(err.message, true); }
+  };
+  if (onDelete) f.querySelector("[data-del]").onclick = () => onDelete().catch((e) => showMsg(e.message, true));
+  return f;
+}
+
+/* ---------- Hours & closures ---------- */
+async function viewHours() {
+  app.innerHTML = `<div id="msg" class="msg"></div>
+    <h2 style="margin-top:0">Weekly hours</h2>
+    <p><small class="hint">Leave a day blank (no rows) to close that day. Times are salon-local.</small></p>
+    <div id="hours">Loading…</div>
+    <h2>Closures (holidays)</h2><div id="closures">Loading…</div>`;
+  const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+  const data = await api("/api/admin/hours");
+  let rows = data.hours;
+  const hoursDiv = document.getElementById("hours");
+  drawHours();
+
+  function drawHours() {
+    hoursDiv.innerHTML = DAYS.map((name, dow) => {
+      const dayRows = rows.map((r, i) => ({ ...r, i })).filter((r) => r.dow === dow);
+      return `<div class="row" data-dow="${dow}" style="margin-bottom:.5rem">
+        <div style="width:110px;font-weight:600">${name}</div>
+        ${dayRows.map((r) => `
+          <span data-i="${r.i}">
+            <input type="time" class="open" value="${minToTime(r.open_min)}"> –
+            <input type="time" class="close" value="${minToTime(r.close_min)}">
+            <button class="btn danger" type="button" data-rm="${r.i}">×</button>
+          </span>`).join("")}
+        <button class="btn secondary" type="button" data-add="${dow}">+ window</button>
+      </div>`;
+    }).join("") + `<button class="btn" id="save-hours">Save hours</button>`;
+
+    hoursDiv.querySelectorAll("[data-add]").forEach((b) => {
+      b.onclick = () => { rows.push({ dow: +b.dataset.add, open_min: 540, close_min: 1200 }); drawHours(); };
+    });
+    hoursDiv.querySelectorAll("[data-rm]").forEach((b) => {
+      b.onclick = () => { rows.splice(+b.dataset.rm, 1); drawHours(); };
+    });
+    document.getElementById("save-hours").onclick = async () => {
+      hoursDiv.querySelectorAll("span[data-i]").forEach((span) => {
+        const i = +span.dataset.i;
+        rows[i].open_min = timeToMin(span.querySelector(".open").value);
+        rows[i].close_min = timeToMin(span.querySelector(".close").value);
+      });
+      try { await api("/api/admin/hours", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ hours: rows }) }); showMsg("Hours saved."); }
+      catch (e) { showMsg(e.message, true); }
+    };
+  }
+
+  await loadClosures();
+  async function loadClosures() {
+    const div = document.getElementById("closures");
+    const data = await api("/api/admin/closures");
+    div.innerHTML = (data.closures.map((c) => `
+      <div class="row"><div style="width:130px">${esc(c.date)}</div><div>${esc(c.reason)}</div>
+      <button class="btn danger" type="button" data-date="${esc(c.date)}">Remove</button></div>`).join("") || "<p><small class='hint'>No closures scheduled.</small></p>") + `
+      <div class="row">
+        <div><label>Date</label><input type="date" id="cl-date"></div>
+        <div><label>Reason</label><input id="cl-reason" placeholder="e.g. Thanksgiving"></div>
+        <button class="btn" id="cl-add">Add closure</button>
+      </div>`;
+    div.querySelectorAll("[data-date]").forEach((b) => {
+      b.onclick = async () => { await api(`/api/admin/closures/${b.dataset.date}`, { method: "DELETE" }); loadClosures(); };
+    });
+    document.getElementById("cl-add").onclick = async () => {
+      const date = document.getElementById("cl-date").value;
+      if (!date) return showMsg("Pick a date", true);
+      try {
+        await api("/api/admin/closures", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ date, reason: document.getElementById("cl-reason").value }) });
+        loadClosures();
+      } catch (e) { showMsg(e.message, true); }
+    };
+  }
+}
+
+/* ---------- Settings ---------- */
+async function viewSettings() {
+  const data = await api("/api/admin/settings");
+  SETTINGS = data.settings;
+  const s = data.settings;
+  app.innerHTML = `<div id="msg" class="msg"></div>
+    <form id="sform" class="grid2">
+      <div><label>Seats (max customers at once)</label><input name="capacity" type="number" min="1" max="50" value="${s.capacity}"><br><small class="hint">Set to 1 for a strict single-seat schedule.</small></div>
+      <div><label>Slot grid (minutes)</label><input name="slot_interval_min" type="number" min="5" max="120" value="${s.slot_interval_min}"><br><small class="hint">Appointments can start every N minutes.</small></div>
+      <div><label>Minimum notice (minutes)</label><input name="min_notice_min" type="number" min="0" value="${s.min_notice_min}"></div>
+      <div><label>Booking window (days ahead)</label><input name="max_days_ahead" type="number" min="1" max="365" value="${s.max_days_ahead}"></div>
+      <div><label>Staff (comma-separated)</label><input name="staff" value="${esc(s.staff)}"><br><small class="hint">Used for the “assigned to” dropdown on bookings.</small></div>
+      <div><label>Timezone</label><input name="timezone" value="${esc(s.timezone)}"><br><small class="hint">IANA name, e.g. America/Los_Angeles.</small></div>
+    </form>
+    <p style="margin-top:1rem"><button class="btn" id="save">Save settings</button></p>`;
+  document.getElementById("save").onclick = async () => {
+    const body = Object.fromEntries(new FormData(document.getElementById("sform")).entries());
+    try {
+      const res = await api("/api/admin/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      SETTINGS = res.settings;
+      showMsg("Settings saved.");
+    } catch (e) { showMsg(e.message, true); }
+  };
+}
+
+/* ---------- boot ---------- */
+const views = { bookings: viewBookings, services: viewServices, hours: viewHours, settings: viewSettings };
+document.querySelectorAll(".tabs button").forEach((b) => {
+  b.onclick = () => {
+    document.querySelectorAll(".tabs button").forEach((x) => x.classList.remove("active"));
+    b.classList.add("active");
+    views[b.dataset.tab]().catch((e) => { app.innerHTML = `<p class="msg err">${esc(e.message)}</p>`; });
+  };
+});
+api("/api/admin/settings").then((d) => { SETTINGS = d.settings; return viewBookings(); })
+  .catch((e) => { app.innerHTML = `<p class="msg err">${esc(e.message)}</p>`; });
+</script>
+</body>
+</html>
