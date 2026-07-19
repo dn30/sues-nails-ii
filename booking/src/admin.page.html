@@ -32,6 +32,11 @@ button.btn.danger{background:transparent;color:var(--red);border:1px solid var(-
 .msg.err{color:var(--red)}
 .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1rem}
 small.hint{color:var(--muted)}
+.day-group{margin:1.5rem 0 0}
+.day-group:first-child{margin-top:.25rem}
+.day-heading{display:flex;align-items:baseline;justify-content:space-between;gap:1rem;padding:.55rem 0;border-bottom:2px solid var(--ink);margin-bottom:.35rem}
+.day-heading h3{font-size:1.05rem;font-weight:700}
+.day-heading .count{font-size:.8rem;color:var(--muted);font-weight:500}
 </style>
 </head>
 <body>
@@ -83,6 +88,17 @@ function showMsg(text, isErr) {
   box.className = "msg" + (isErr ? " err" : "");
   setTimeout(() => { if (box.textContent === text) box.textContent = ""; }, 4000);
 }
+function longDate(ymd) {
+  // Parse as local calendar date so the weekday matches the salon-local booking day.
+  const [y, m, d] = ymd.split("-").map(Number);
+  const date = new Date(y, m - 1, d);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
+  const label = date.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+  if (date.getTime() === today.getTime()) return "Today — " + label;
+  if (date.getTime() === tomorrow.getTime()) return "Tomorrow — " + label;
+  return label;
+}
 
 /* ---------- Bookings ---------- */
 async function viewBookings() {
@@ -112,11 +128,15 @@ async function viewBookings() {
       const data = await api(`/api/admin/bookings?from=${from}&to=${to}${inc}`);
       if (!data.bookings.length) { list.innerHTML = "<p>No bookings in this range.</p>"; return; }
       const staff = staffList();
-      list.innerHTML = `<table><thead><tr>
-        <th>When</th><th>Service</th><th>Customer</th><th>Party</th><th>Assigned to</th><th>Status</th><th></th>
-      </tr></thead><tbody>` + data.bookings.map((b) => `
+      // Group by date (API already returns bookings ordered by start_ts).
+      const byDate = new Map();
+      for (const b of data.bookings) {
+        if (!byDate.has(b.date)) byDate.set(b.date, []);
+        byDate.get(b.date).push(b);
+      }
+      const rowHtml = (b) => `
         <tr class="${b.status === "cancelled" ? "cancelled" : ""}" data-id="${b.id}">
-          <td>${esc(b.date)}<br><strong>${esc(b.time)}</strong></td>
+          <td><strong>${esc(b.time)}</strong></td>
           <td>${esc(b.service)}<br><small class="hint">${esc(b.code)}</small></td>
           <td>${esc(b.customer_name)}<br><small class="hint">${esc(b.customer_phone)}${b.customer_email ? " · " + esc(b.customer_email) : ""}</small>${b.notes ? `<br><small class="hint">“${esc(b.notes)}”</small>` : ""}</td>
           <td>${b.party_size}</td>
@@ -129,7 +149,21 @@ async function viewBookings() {
           <td>${b.status === "confirmed"
             ? `<button class="btn danger cancel">Cancel</button>`
             : `<button class="btn secondary restore">Restore</button>`}</td>
-        </tr>`).join("") + "</tbody></table>";
+        </tr>`;
+      list.innerHTML = [...byDate.entries()].map(([date, bookings]) => {
+        const n = bookings.length;
+        return `<section class="day-group">
+          <div class="day-heading">
+            <h3>${esc(longDate(date))}</h3>
+            <span class="count">${n} booking${n === 1 ? "" : "s"}</span>
+          </div>
+          <table><thead><tr>
+            <th>Time</th><th>Service</th><th>Customer</th><th>Party</th><th>Assigned to</th><th>Status</th><th></th>
+          </tr></thead><tbody>
+            ${bookings.map(rowHtml).join("")}
+          </tbody></table>
+        </section>`;
+      }).join("");
 
       list.querySelectorAll(".assign").forEach((sel) => {
         sel.onchange = async () => {
