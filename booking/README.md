@@ -61,15 +61,19 @@ npx wrangler d1 create sues-nails-booking
 # 2. Create tables and seed defaults (hours, starter services, settings)
 npx wrangler d1 execute sues-nails-booking --remote --file=schema.sql
 
-# 3. Set the admin password
+# 3. Set the admin / soft-launch password (username is in wrangler.toml)
 npx wrangler secret put ADMIN_PASSWORD
 
 # 4. Ship it
 npx wrangler deploy
 ```
 
-`wrangler deploy` prints the Worker URL, e.g.
-`https://sues-nails-booking.<your-subdomain>.workers.dev`.
+Soft-launch URLs after deploy:
+
+- Booking (password-gated): `https://sues-nails-booking.<subdomain>.workers.dev/booking`
+- Admin (same login): `https://sues-nails-booking.<subdomain>.workers.dev/admin`
+
+Leave `window.BOOKING_API` empty on the main site until you're ready to go public.
 
 ## Plug it into the website
 
@@ -89,10 +93,24 @@ Any other site can embed the widget with:
 
 The widget infers the API base from its own script URL — no further configuration.
 
-## Admin
+## Admin & soft-launch booking
 
-Open `https://WORKER-URL/admin` (bookmark it; nothing on the customer site links to
-it). Username is anything, password is the `ADMIN_PASSWORD` secret.
+Open these deep links (nothing on the public website links to them):
+
+- `https://WORKER-URL/booking` — customer booking widget (soft launch)
+- `https://WORKER-URL/admin` — admin panel
+
+Both use HTTP Basic Auth with the same credentials:
+
+- **Username:** the exact email in `wrangler.toml` → `[vars].ADMIN_USERNAME`
+- **Password:** the `ADMIN_PASSWORD` Worker secret
+
+```bash
+npx wrangler secret put ADMIN_PASSWORD
+```
+
+Until you set `window.BOOKING_API` on the main site, the public Sue's Nails
+pages have no booking nav or section.
 
 - **Bookings** — upcoming bookings by date range; assign staff, cancel/restore
 - **Services** — create/edit name, description, price, duration, buffers, order, active flag
@@ -106,9 +124,9 @@ it). Username is anything, password is the `ADMIN_PASSWORD` secret.
 
 ```bash
 cd booking
-cp .dev.vars.example .dev.vars           # local admin password (change-me)
+cp .dev.vars.example .dev.vars           # set ADMIN_USERNAME + ADMIN_PASSWORD
 npx wrangler d1 execute sues-nails-booking --local --file=schema.sql
-npx wrangler dev                         # http://localhost:8787 (demo at /)
+npx wrangler dev                         # http://localhost:8787/booking
 ./test-api.sh                            # functional tests against the dev server
 ```
 

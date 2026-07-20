@@ -3,8 +3,9 @@ import { getSettings, putSettings, getHours, getDayCapacity, listStaff } from ".
 import { parseYmd, wallToUtc, ymdInTz, fmtTimeInTz } from "./slots.js";
 
 export function checkAuth(request, env) {
-  const expected = env.ADMIN_PASSWORD;
-  if (!expected) return false; // no password configured -> admin disabled
+  const expectedUser = env.ADMIN_USERNAME;
+  const expectedPass = env.ADMIN_PASSWORD;
+  if (!expectedUser || !expectedPass) return false; // not configured -> locked down
   const header = request.headers.get("Authorization") || "";
   if (!header.startsWith("Basic ")) return false;
   let decoded;
@@ -14,8 +15,13 @@ export function checkAuth(request, env) {
     return false;
   }
   const idx = decoded.indexOf(":");
+  const user = idx === -1 ? decoded : decoded.slice(0, idx);
   const pass = idx === -1 ? "" : decoded.slice(idx + 1);
-  return timingSafeEqual(pass, expected);
+  // Exact email match (case-insensitive) + password.
+  return (
+    timingSafeEqual(user.toLowerCase(), expectedUser.toLowerCase()) &&
+    timingSafeEqual(pass, expectedPass)
+  );
 }
 
 function timingSafeEqual(a, b) {
@@ -31,7 +37,7 @@ function timingSafeEqual(a, b) {
 export function unauthorized() {
   return new Response("Authentication required", {
     status: 401,
-    headers: { "WWW-Authenticate": 'Basic realm="Sue\'s Nails Admin", charset="UTF-8"' },
+    headers: { "WWW-Authenticate": 'Basic realm="Sue\'s Nails", charset="UTF-8"' },
   });
 }
 

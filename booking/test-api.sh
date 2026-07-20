@@ -2,7 +2,12 @@
 # Functional tests against a local `wrangler dev` instance on :8787.
 set -u
 BASE="http://localhost:8787"
-AUTH="admin:change-me"
+# Credentials come from .dev.vars (gitignored); fall back for CI-less local defaults.
+if [ -f .dev.vars ]; then
+  # shellcheck disable=SC1091
+  set -a; source .dev.vars; set +a
+fi
+AUTH="${ADMIN_USERNAME:-anhthynguyen78@gmail.com}:${ADMIN_PASSWORD:-change-me}"
 DATE=$(TZ=America/Los_Angeles date -d "+2 days" +%F)
 PASS=0; FAIL=0
 
@@ -63,13 +68,21 @@ code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/bookings" -H 'C
   -d "{\"service_id\":1,\"start\":\"$odd\",\"party_size\":1,\"name\":\"Eve\",\"phone\":\"909-555-0005\"}")
 check "off-grid start time returns 409" "409" "$code"
 
-# 9. Admin auth
+# 9. Admin auth — exact email required
 code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/admin/bookings")
 check "admin without auth returns 401" "401" "$code"
 code=$(curl -s -o /dev/null -w '%{http_code}' -u "admin:wrong" "$BASE/api/admin/bookings")
 check "admin with wrong password returns 401" "401" "$code"
+code=$(curl -s -o /dev/null -w '%{http_code}' -u "wrong@example.com:${ADMIN_PASSWORD:-change-me}" "$BASE/api/admin/bookings")
+check "admin with wrong username returns 401" "401" "$code"
 code=$(curl -s -o /dev/null -w '%{http_code}' -u "$AUTH" "$BASE/api/admin/bookings")
-check "admin with correct password returns 200" "200" "$code"
+check "admin with correct email+password returns 200" "200" "$code"
+
+# Soft-launch booking page is also gated
+code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/booking")
+check "booking page without auth returns 401" "401" "$code"
+code=$(curl -s -o /dev/null -w '%{http_code}' -u "$AUTH" "$BASE/booking")
+check "booking page with auth returns 200" "200" "$code"
 
 # 10. Admin: assign staff, then cancel a booking frees a seat
 bid=$(curl -s -u "$AUTH" "$BASE/api/admin/bookings?from=$DATE&to=$DATE" | jqget "d['bookings'][0]['id']")

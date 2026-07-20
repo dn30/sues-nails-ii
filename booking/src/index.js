@@ -21,7 +21,7 @@ import {
 } from "./admin-api.js";
 import widgetJs from "./widget.client.js";
 import adminHtml from "./admin.page.html";
-import demoHtml from "./demo.page.html";
+import bookingHtml from "./booking.page.html";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -41,7 +41,8 @@ export default {
     }
 
     try {
-      // ---- static assets ----
+      // Widget JS stays public so the authenticated booking page can load it.
+      // The HTML gate (/booking) is what keeps the soft-launch private.
       if (method === "GET" && path === "/widget.js") {
         return new Response(widgetJs, {
           headers: {
@@ -51,22 +52,42 @@ export default {
           },
         });
       }
-      if (method === "GET" && (path === "/demo" || path === "/")) {
-        return new Response(demoHtml, { headers: { "Content-Type": "text/html; charset=utf-8" } });
-      }
 
-      // ---- public API ----
+      // ---- public API (needed by the widget after login) ----
       if (method === "GET" && path === "/api/health") return json({ ok: true });
       if (method === "GET" && path === "/api/services") return handleListServices(env);
       if (method === "GET" && path === "/api/availability") return handleAvailability(env, url);
       if (method === "POST" && path === "/api/bookings") return handleCreateBooking(env, request);
 
-      // ---- admin (basic auth) ----
-      if (path === "/admin" || path.startsWith("/api/admin/")) {
+      // ---- password-protected pages & admin API ----
+      // Soft-launch: /booking (and /) are gated. /admin shares the same credentials.
+      // Public site does not link here — BOOKING_API stays empty on the main site.
+      const gated =
+        path === "/booking" ||
+        path === "/" ||
+        path === "/demo" ||
+        path === "/admin" ||
+        path.startsWith("/api/admin/");
+
+      if (gated) {
         if (!checkAuth(request, env)) return unauthorized();
 
+        if (method === "GET" && (path === "/booking" || path === "/" || path === "/demo")) {
+          return new Response(bookingHtml, {
+            headers: {
+              "Content-Type": "text/html; charset=utf-8",
+              "Cache-Control": "no-store",
+            },
+          });
+        }
+
         if (method === "GET" && path === "/admin") {
-          return new Response(adminHtml, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+          return new Response(adminHtml, {
+            headers: {
+              "Content-Type": "text/html; charset=utf-8",
+              "Cache-Control": "no-store",
+            },
+          });
         }
 
         if (method === "GET" && path === "/api/admin/bookings") return adminListBookings(env, url);

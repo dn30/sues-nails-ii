@@ -9,6 +9,10 @@ binding = "DB"
 database_name = "sues-nails-booking"
 database_id = "REPLACE_WITH_D1_DATABASE_ID"
 
+# Soft-launch login email (password is a Worker secret: ADMIN_PASSWORD).
+[vars]
+ADMIN_USERNAME = "anhthynguyen78@gmail.com"
+
 # Bundle the widget and admin page as raw text assets.
 [[rules]]
 type = "Text"
