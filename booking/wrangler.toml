@@ -2,6 +2,16 @@ name = "sues-nails-booking"
 main = "src/index.js"
 compatibility_date = "2026-07-01"
 
+# Serve the booking system on paths of the main domain instead of workers.dev.
+# All other suenails.com paths continue to be served by the Pages site.
+workers_dev = false
+routes = [
+  { pattern = "suenails.com/booking*", zone_name = "suenails.com" },
+  { pattern = "suenails.com/admin*", zone_name = "suenails.com" },
+  { pattern = "suenails.com/api/*", zone_name = "suenails.com" },
+  { pattern = "suenails.com/widget.js", zone_name = "suenails.com" },
+]
+
 # After creating the production database with `wrangler d1 create sues-nails-booking`,
 # replace database_id below with the id it prints. Local dev ignores this id.
 [[d1_databases]]
