@@ -39,7 +39,9 @@ export function capacityForDate(settings, dayCapacity, date) {
   return dayCapacity[dow] ?? settings.capacity;
 }
 
-async function slotsForDate(db, service, dateStr, settings, now) {
+// opts.admin relaxes customer-facing limits: no minimum notice and no
+// max-days-ahead window (staff take phone bookings beyond the public window).
+export async function slotsForDate(db, service, dateStr, settings, now, opts = {}) {
   const date = parseYmd(dateStr);
   if (!date) return { error: "Invalid date, expected YYYY-MM-DD" };
 
@@ -47,7 +49,9 @@ async function slotsForDate(db, service, dateStr, settings, now) {
   const todayStr = ymdInTz(tz, now);
   const maxTs = now + settings.max_days_ahead * 86400000;
   const maxStr = ymdInTz(tz, maxTs);
-  if (dateStr < todayStr || dateStr > maxStr) return { slots: [], capacity: settings.capacity };
+  if (dateStr < todayStr || (!opts.admin && dateStr > maxStr)) {
+    return { slots: [], capacity: settings.capacity };
+  }
 
   const [hours, closed, dayCapacity] = await Promise.all([
     getHours(db),
@@ -62,7 +66,7 @@ async function slotsForDate(db, service, dateStr, settings, now) {
   const slots = computeSlots({
     service,
     date,
-    settings: { ...settings, capacity },
+    settings: { ...settings, capacity, min_notice_min: opts.admin ? 0 : settings.min_notice_min },
     hours,
     closed,
     bookings,

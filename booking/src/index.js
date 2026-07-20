@@ -3,6 +3,8 @@ import {
   checkAuth,
   unauthorized,
   adminListBookings,
+  adminAvailability,
+  adminCreateBooking,
   adminPatchBooking,
   adminListServices,
   adminCreateService,
@@ -91,6 +93,8 @@ export default {
         }
 
         if (method === "GET" && path === "/api/admin/bookings") return adminListBookings(env, url);
+        if (method === "POST" && path === "/api/admin/bookings") return adminCreateBooking(env, request);
+        if (method === "GET" && path === "/api/admin/availability") return adminAvailability(env, url);
         let m = path.match(/^\/api\/admin\/bookings\/(\d+)$/);
         if (m && method === "PATCH") return adminPatchBooking(env, +m[1], request);
 

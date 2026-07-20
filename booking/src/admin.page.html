@@ -103,9 +103,35 @@ function longDate(ymd) {
 /* ---------- Bookings ---------- */
 async function viewBookings() {
   await refreshStaff();
+  const services = (await api("/api/admin/services")).services;
   const today = new Date().toISOString().slice(0, 10);
   const in14 = new Date(Date.now() + 14 * 864e5).toISOString().slice(0, 10);
   app.innerHTML = `
+    <h2 style="margin-top:0">Add a booking</h2>
+    <form id="add-form">
+      <div class="row">
+        <div><label>Service</label><select id="ab-service">
+          ${services.map((s) => `<option value="${s.id}">${esc(s.name)}${s.active === 0 ? " (inactive)" : ""}</option>`).join("")}
+        </select></div>
+        <div><label>Date</label><input type="date" id="ab-date" value="${today}" required></div>
+        <div><label>Time</label><select id="ab-time"></select></div>
+        <div id="ab-custom-wrap" style="display:none"><label>Custom time</label><input type="time" id="ab-custom"></div>
+        <div><label>Party</label><input type="number" id="ab-party" value="1" min="1" max="50" style="width:70px"></div>
+      </div>
+      <div class="row">
+        <div><label>Customer name</label><input id="ab-name" required placeholder="e.g. Maria"></div>
+        <div><label>Phone</label><input id="ab-phone" placeholder="optional" style="width:130px"></div>
+        <div><label>Email</label><input id="ab-email" type="email" placeholder="optional" style="width:160px"></div>
+        <div><label>Assigned to</label><select id="ab-staff">
+          <option value="">— unassigned —</option>
+          ${staffList().map((s) => `<option value="${esc(s)}">${esc(s)}</option>`).join("")}
+        </select></div>
+        <div><label>Notes</label><input id="ab-notes" style="width:170px"></div>
+        <div><label>&nbsp;</label><label><input type="checkbox" id="ab-force" style="width:auto"> book anyway (full or closed)</label></div>
+        <button class="btn" type="submit">Add booking</button>
+      </div>
+    </form>
+    <hr style="border:none;border-top:1px solid var(--hairline);margin:1.25rem 0">
     <div class="row">
       <div><label>From</label><input type="date" id="from" value="${today}"></div>
       <div><label>To</label><input type="date" id="to" value="${in14}"></div>
@@ -116,6 +142,66 @@ async function viewBookings() {
     <div id="list">Loading…</div>`;
   document.getElementById("reload").onclick = loadBookings;
   document.getElementById("inc-cancelled").onchange = loadBookings;
+
+  const abService = document.getElementById("ab-service");
+  const abDate = document.getElementById("ab-date");
+  const abTime = document.getElementById("ab-time");
+  const abCustomWrap = document.getElementById("ab-custom-wrap");
+
+  async function loadSlots() {
+    abTime.innerHTML = `<option value="">Loading…</option>`;
+    try {
+      const data = await api(`/api/admin/availability?service_id=${abService.value}&date=${abDate.value}`);
+      const opts = data.slots.map((s) =>
+        `<option value="${s.start_ts}">${esc(s.label)} (${s.remaining} left)</option>`).join("");
+      abTime.innerHTML = (opts || `<option value="">— no open slots —</option>`) +
+        `<option value="custom">Custom time…</option>`;
+    } catch (e) {
+      abTime.innerHTML = `<option value="custom">Custom time…</option>`;
+      showMsg(e.message, true);
+    }
+    abCustomWrap.style.display = abTime.value === "custom" ? "" : "none";
+  }
+  abService.onchange = loadSlots;
+  abDate.onchange = loadSlots;
+  abTime.onchange = () => { abCustomWrap.style.display = abTime.value === "custom" ? "" : "none"; };
+  await loadSlots();
+
+  document.getElementById("add-form").onsubmit = async (e) => {
+    e.preventDefault();
+    const body = {
+      service_id: parseInt(abService.value, 10),
+      party_size: parseInt(document.getElementById("ab-party").value, 10) || 1,
+      name: document.getElementById("ab-name").value.trim(),
+      phone: document.getElementById("ab-phone").value.trim(),
+      email: document.getElementById("ab-email").value.trim(),
+      notes: document.getElementById("ab-notes").value.trim(),
+      assigned_to: document.getElementById("ab-staff").value,
+      force: document.getElementById("ab-force").checked,
+    };
+    if (abTime.value === "custom") {
+      const t = document.getElementById("ab-custom").value;
+      if (!t) return showMsg("Pick a custom time", true);
+      body.date = abDate.value;
+      body.time = t;
+    } else if (abTime.value) {
+      body.start_ts = parseInt(abTime.value, 10);
+    } else {
+      return showMsg("Pick a time (or use Custom time)", true);
+    }
+    try {
+      const res = await api("/api/admin/bookings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      showMsg(`Booking added — ${res.booking.code} (${res.booking.date} ${res.booking.time})`);
+      document.getElementById("ab-name").value = "";
+      document.getElementById("ab-phone").value = "";
+      document.getElementById("ab-email").value = "";
+      document.getElementById("ab-notes").value = "";
+      document.getElementById("ab-force").checked = false;
+      await loadSlots();
+      await loadBookings();
+    } catch (err) { showMsg(err.message, true); }
+  };
+
   await loadBookings();
 
   async function loadBookings() {

@@ -1,6 +1,15 @@
-import { json, badRequest } from "./api.js";
-import { getSettings, putSettings, getHours, getDayCapacity, listStaff } from "./db.js";
-import { parseYmd, wallToUtc, ymdInTz, fmtTimeInTz } from "./slots.js";
+import { json, badRequest, slotsForDate } from "./api.js";
+import {
+  getSettings,
+  putSettings,
+  getHours,
+  getDayCapacity,
+  listStaff,
+  getService,
+  bookingsInWindow,
+  newBookingCode,
+} from "./db.js";
+import { parseYmd, wallToUtc, ymdInTz, fmtTimeInTz, maxConcurrentSeats } from "./slots.js";
 
 export function checkAuth(request, env) {
   const expectedUser = env.ADMIN_USERNAME;
@@ -83,6 +92,121 @@ export async function adminListBookings(env, url) {
       status: b.status,
     })),
   });
+}
+
+// Slots for the admin booking form: no minimum notice, no max-days-ahead
+// window, and inactive services are still bookable by staff.
+export async function adminAvailability(env, url) {
+  const serviceId = parseInt(url.searchParams.get("service_id"), 10);
+  const dateStr = url.searchParams.get("date");
+  if (!serviceId) return badRequest("service_id is required");
+  if (!dateStr) return badRequest("date is required");
+
+  const service = await getService(env.DB, serviceId);
+  if (!service) return json({ error: "Service not found" }, 404);
+
+  const settings = await getSettings(env.DB);
+  const result = await slotsForDate(env.DB, service, dateStr, settings, Date.now(), { admin: true });
+  if (result.error) return badRequest(result.error);
+  return json({ service_id: serviceId, date: dateStr, ...result });
+}
+
+export async function adminCreateBooking(env, request) {
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return badRequest("Invalid JSON body");
+  }
+
+  const serviceId = parseInt(body.service_id, 10);
+  const partySize = Math.max(1, parseInt(body.party_size, 10) || 1);
+  const name = String(body.name || "").trim();
+  const phone = String(body.phone || "").trim();
+  const email = String(body.email || "").trim();
+  const notes = String(body.notes || "").trim().slice(0, 500);
+  const assignedTo = String(body.assigned_to || "").trim();
+  // force=true books the time even when it is full or outside open hours
+  // (walk-ins, squeezing in a regular, etc). Capacity checks are skipped.
+  const force = body.force === true || body.force === 1;
+
+  if (!serviceId) return badRequest("service_id is required");
+  if (!name) return badRequest("name is required");
+
+  const service = await getService(env.DB, serviceId);
+  if (!service) return json({ error: "Service not found" }, 404);
+
+  const settings = await getSettings(env.DB);
+  const now = Date.now();
+  const tz = settings.timezone;
+
+  // Start time: either start_ts (epoch ms, from a picked slot) or a salon-local
+  // date (YYYY-MM-DD) + time (HH:MM) for custom/forced times.
+  let startTs = Number(body.start_ts);
+  if (!Number.isFinite(startTs) || startTs <= 0) {
+    const date = parseYmd(body.date);
+    const tm = /^(\d{1,2}):(\d{2})$/.exec(body.time || "");
+    if (!date || !tm) return badRequest("Provide start_ts, or date (YYYY-MM-DD) and time (HH:MM)");
+    startTs = wallToUtc(tz, date.y, date.m, date.d, parseInt(tm[1], 10) * 60 + parseInt(tm[2], 10));
+  }
+  const dateStr = ymdInTz(tz, startTs);
+
+  let capacity = settings.capacity;
+  if (!force) {
+    const result = await slotsForDate(env.DB, service, dateStr, settings, now, { admin: true });
+    if (result.error) return badRequest(result.error);
+    capacity = result.capacity;
+    if (partySize > capacity) return badRequest(`Party size cannot exceed ${capacity}`);
+    const slot = (result.slots || []).find((s) => s.start_ts === startTs);
+    if (!slot) {
+      return json({ error: "That time is not available. Check 'book anyway' to override." }, 409);
+    }
+    if (slot.remaining < partySize) {
+      return json(
+        { error: `Only ${slot.remaining} seat(s) left at that time. Check 'book anyway' to override.` },
+        409
+      );
+    }
+  }
+
+  const endTs = startTs + service.duration_min * 60000;
+  const blockStart = startTs - service.buffer_before_min * 60000;
+  const blockEnd = endTs + service.buffer_after_min * 60000;
+  const code = newBookingCode();
+
+  const inserted = await env.DB.prepare(
+    `INSERT INTO bookings
+       (code, service_id, start_ts, end_ts, block_start_ts, block_end_ts,
+        party_size, customer_name, customer_phone, customer_email, notes, assigned_to, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`
+  )
+    .bind(code, serviceId, startTs, endTs, blockStart, blockEnd, partySize, name, phone, email, notes, assignedTo, now)
+    .first();
+
+  if (!force) {
+    // Same race guard as the public endpoint: verify capacity after insert.
+    const overlapping = await bookingsInWindow(env.DB, blockStart, blockEnd);
+    const peak = maxConcurrentSeats(overlapping, blockStart, blockEnd);
+    if (peak > capacity) {
+      await env.DB.prepare("DELETE FROM bookings WHERE id = ?").bind(inserted.id).run();
+      return json({ error: "That time was just booked by someone else. Please pick another." }, 409);
+    }
+  }
+
+  return json(
+    {
+      booking: {
+        id: inserted.id,
+        code,
+        service: service.name,
+        date: dateStr,
+        time: fmtTimeInTz(tz, startTs),
+        party_size: partySize,
+        assigned_to: assignedTo,
+      },
+    },
+    201
+  );
 }
 
 export async function adminPatchBooking(env, id, request) {
