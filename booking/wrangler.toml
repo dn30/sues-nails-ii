@@ -7,7 +7,7 @@ compatibility_date = "2026-07-01"
 [[d1_databases]]
 binding = "DB"
 database_name = "sues-nails-booking"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "6075f0de-4ee7-49f0-be35-b676fdefce10"
 
 # Soft-launch login email (password is a Worker secret: ADMIN_PASSWORD).
 [vars]
