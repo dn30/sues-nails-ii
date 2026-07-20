@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Book Online — Sue's Nails</title>
+<style>
+  :root { --ink: #262016; --soft: #57503f; --gold-dark: #8c6d20; --cream: #faf6ef; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: var(--cream); color: var(--ink); line-height: 1.5; }
+  header { padding: 1.25rem 1.5rem; border-bottom: 1px solid rgba(168,132,44,.28); }
+  header .brand { font-size: 1.2rem; font-weight: 600; }
+  header .note { font-size: .85rem; color: var(--soft); margin-top: .25rem; }
+  main { max-width: 860px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+  h1 { font-size: 1.75rem; margin-bottom: .5rem; }
+  .lead { color: var(--soft); margin-bottom: 2rem; max-width: 48ch; }
+  .preview-banner {
+    background: #fff8e6; border: 1px solid rgba(168,132,44,.35); border-radius: 6px;
+    padding: .75rem 1rem; font-size: .9rem; color: var(--gold-dark); margin-bottom: 1.75rem;
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">Sue&rsquo;s Nails</div>
+  <div class="note">Rancho Cucamonga &middot; private booking preview</div>
+</header>
+<main>
+  <div class="preview-banner">This page is password-protected and not linked from the public website yet.</div>
+  <h1>Book an Appointment</h1>
+  <p class="lead">Pick a service and a time that works for you. Walk-ins are always welcome too.</p>
+  <div id="sues-booking"></div>
+</main>
+<script src="/widget.js" data-target="#sues-booking" defer></script>
+</body>
+</html>

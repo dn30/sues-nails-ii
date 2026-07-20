@@ -1,0 +1,20 @@
+name = "sues-nails-booking"
+main = "src/index.js"
+compatibility_date = "2026-07-01"
+
+# After creating the production database with `wrangler d1 create sues-nails-booking`,
+# replace database_id below with the id it prints. Local dev ignores this id.
+[[d1_databases]]
+binding = "DB"
+database_name = "sues-nails-booking"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+
+# Soft-launch login email (password is a Worker secret: ADMIN_PASSWORD).
+[vars]
+ADMIN_USERNAME = "anhthynguyen78@gmail.com"
+
+# Bundle the widget and admin page as raw text assets.
+[[rules]]
+type = "Text"
+globs = ["**/*.client.js", "**/*.page.html"]
+fallthrough = true

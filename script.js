@@ -15,6 +15,19 @@ links.querySelectorAll("a").forEach((link) => {
   });
 });
 
+/* Online booking widget: enabled when window.BOOKING_API is set (see index.html). */
+(function () {
+  const api = (window.BOOKING_API || "").replace(/\/+$/, "");
+  if (!api) return;
+  document.getElementById("book").hidden = false;
+  document.getElementById("nav-book").hidden = false;
+  const s = document.createElement("script");
+  s.src = api + "/widget.js";
+  s.defer = true;
+  s.dataset.target = "#sues-booking";
+  document.head.appendChild(s);
+})();
+
 /* Live open/closed status (salon local time: America/Los_Angeles).
    Mon–Sat 9:00–20:00, Sun 9:00–18:00. */
 function updateOpenStatus() {

@@ -27,6 +27,7 @@
       </button>
       <ul class="nav-links">
         <li><a href="#services">Services</a></li>
+        <li id="nav-book" hidden><a href="#book">Book Online</a></li>
         <li><a href="#hours">Hours</a></li>
         <li><a href="#contact">Contact</a></li>
         <li><a href="tel:19099451679" class="nav-cta">Call Now</a></li>
@@ -166,6 +167,17 @@
       </div>
     </section>
 
+    <section id="book" class="section booking" hidden>
+      <div class="container">
+        <div class="section-header">
+          <p class="section-eyebrow">Book online</p>
+          <h2>Book an Appointment</h2>
+          <p class="section-lead">Pick a service and a time that works for you — walk-ins are always welcome too.</p>
+        </div>
+        <div id="sues-booking"></div>
+      </div>
+    </section>
+
     <section id="hours" class="section hours">
       <div class="container hours-inner">
         <div class="hours-text">
@@ -246,6 +258,11 @@
     </div>
   </footer>
 
+  <script>
+    // Online booking: set to the deployed booking Worker URL to enable, e.g.
+    // window.BOOKING_API = "https://sues-nails-booking.YOUR-SUBDOMAIN.workers.dev";
+    window.BOOKING_API = "";
+  </script>
   <script src="script.js"></script>
 </body>
 </html>

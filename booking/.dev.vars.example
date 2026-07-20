@@ -1,0 +1,5 @@
+# Copy to .dev.vars for local development.
+# In production: ADMIN_USERNAME is set in wrangler.toml [vars];
+# password is set with: npx wrangler secret put ADMIN_PASSWORD
+ADMIN_USERNAME=anhthynguyen78@gmail.com
+ADMIN_PASSWORD=change-me
