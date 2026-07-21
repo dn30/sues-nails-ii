@@ -48,6 +48,14 @@ a.tel:active{opacity:.7}
 .add-booking[open] summary::before{content:"–"}
 .add-booking form{padding:.15rem 1rem 1rem}
 
+/* Tip: tap/hover "?" next to a label */
+.tip{position:relative;display:inline-flex;align-items:center;margin-left:.35rem;vertical-align:middle}
+.tip>button{appearance:none;-webkit-appearance:none;border:1px solid var(--hairline);background:var(--cream);color:var(--soft);width:1.35rem;height:1.35rem;border-radius:50%;font:600 .72rem/1 system-ui,sans-serif;padding:0;cursor:help}
+.tip>button:focus{outline:2px solid var(--gold);outline-offset:1px}
+.tip .tip-bubble{display:none;position:absolute;left:0;top:calc(100% + .4rem);z-index:5;width:min(260px,70vw);padding:.55rem .7rem;border-radius:8px;background:var(--ink);color:var(--cream);font-size:.8rem;font-weight:400;line-height:1.35;letter-spacing:0;text-transform:none;box-shadow:0 6px 18px rgba(38,32,22,.22)}
+.tip .tip-bubble::before{content:"";position:absolute;left:.7rem;top:-5px;border:5px solid transparent;border-top:0;border-bottom-color:var(--ink)}
+.tip:hover .tip-bubble,.tip:focus-within .tip-bubble,.tip.is-open .tip-bubble{display:block}
+
 /* ---- Mobile ---- */
 @media (max-width: 720px) {
   body{padding:.75rem}
@@ -522,19 +530,33 @@ async function viewHours() {
 }
 
 /* ---------- Settings ---------- */
+function tip(text) {
+  return `<span class="tip"><button type="button" aria-label="More info">?</button><span class="tip-bubble" role="tooltip">${text}</span></span>`;
+}
+
 async function viewSettings() {
   const data = await api("/api/admin/settings");
   SETTINGS = data.settings;
   const s = data.settings;
   app.innerHTML = `<div id="msg" class="msg"></div>
     <form id="sform" class="grid2">
-      <div><label>Default seats (max customers at once)</label><input name="capacity" type="number" min="1" max="50" value="${s.capacity}"><br><small class="hint">Set to 1 for a strict single-seat schedule. Override per day in Hours &amp; Closures.</small></div>
-      <div><label>Slot grid (minutes)</label><input name="slot_interval_min" type="number" min="5" max="120" value="${s.slot_interval_min}"><br><small class="hint">Appointments can start every N minutes.</small></div>
-      <div><label>Minimum notice (minutes)</label><input name="min_notice_min" type="number" min="0" value="${s.min_notice_min}"></div>
-      <div><label>Booking window (days ahead)</label><input name="max_days_ahead" type="number" min="1" max="365" value="${s.max_days_ahead}"></div>
-      <div><label>Timezone</label><input name="timezone" value="${esc(s.timezone)}"><br><small class="hint">IANA name, e.g. America/Los_Angeles.</small></div>
+      <div><label>Default seats (max customers at once)${tip("How many customers can be served at the same time. Example: 3 means three appointments can overlap. Set to 1 for one customer at a time. You can override this per weekday under Hours &amp; Closures.")}</label><input name="capacity" type="number" min="1" max="50" value="${s.capacity}"></div>
+      <div><label>Slot grid (minutes)${tip("How often new appointment start times appear. With 30, customers see 9:00, 9:30, 10:00, and so on. Smaller numbers give more choices but a busier calendar.")}</label><input name="slot_interval_min" type="number" min="5" max="120" value="${s.slot_interval_min}"></div>
+      <div><label>Minimum notice (minutes)${tip("How far ahead customers must book online. With 60, they cannot pick a time that starts in the next hour. Does not apply when you add a booking in Admin.")}</label><input name="min_notice_min" type="number" min="0" value="${s.min_notice_min}"></div>
+      <div><label>Booking window (days ahead)${tip("How far into the future customers can book online. With 30, they can book up to about a month ahead. Admin bookings can go further.")}</label><input name="max_days_ahead" type="number" min="1" max="365" value="${s.max_days_ahead}"></div>
+      <div><label>Timezone${tip("Salon-local timezone used for open hours, slots, and booking times. Keep America/Los_Angeles for Rancho Cucamonga. Changing this incorrectly can shift appointment times.")}</label><input name="timezone" value="${esc(s.timezone)}"></div>
     </form>
     <p style="margin-top:1rem"><button class="btn" id="save">Save settings</button></p>`;
+
+  // Tap to toggle tip on phones; close others / outside clicks.
+  app.querySelectorAll(".tip").forEach((el) => {
+    el.querySelector("button").onclick = (e) => {
+      e.preventDefault();
+      const open = el.classList.contains("is-open");
+      app.querySelectorAll(".tip.is-open").forEach((t) => t.classList.remove("is-open"));
+      if (!open) el.classList.add("is-open");
+    };
+  });
   document.getElementById("save").onclick = async () => {
     const body = Object.fromEntries(new FormData(document.getElementById("sform")).entries());
     try {
