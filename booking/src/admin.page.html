@@ -92,6 +92,26 @@ a.tel:active{opacity:.7}
 .closure-card .when{font-weight:600}
 .closure-add{border:1px dashed var(--hairline);border-radius:10px;padding:.85rem;margin-top:.5rem;background:#fdfbf5}
 
+/* Services list */
+.svc-list{display:flex;flex-direction:column;gap:.5rem;margin-top:.75rem}
+.svc-item{border:1px solid var(--hairline);border-radius:10px;background:var(--white);overflow:hidden}
+.svc-item.is-inactive{opacity:.65}
+.svc-summary{display:flex;align-items:center;gap:.75rem;width:100%;padding:.75rem .85rem;border:none;background:transparent;font:inherit;color:inherit;text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.svc-num{flex:0 0 1.75rem;width:1.75rem;height:1.75rem;border-radius:50%;background:var(--cream);border:1px solid var(--hairline);display:inline-flex;align-items:center;justify-content:center;font-size:.8rem;font-weight:700;color:var(--soft)}
+.svc-name{flex:1;min-width:0;font-weight:600;font-size:1rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.svc-meta{flex:0 0 auto;font-size:.8rem;color:var(--muted);white-space:nowrap}
+.svc-chevron{flex:0 0 auto;color:var(--muted);font-size:.85rem;transition:transform .15s ease}
+.svc-item.is-open .svc-chevron{transform:rotate(90deg)}
+.svc-body{display:none;padding:0 .85rem .85rem;border-top:1px solid var(--hairline)}
+.svc-item.is-open .svc-body{display:block}
+.svc-details{display:grid;gap:.35rem;padding:.75rem 0;font-size:.92rem}
+.svc-details div{display:grid;grid-template-columns:7.5rem 1fr;gap:.5rem}
+.svc-details dt,.svc-detail-label{font-size:.66rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);padding-top:.15rem}
+.svc-actions{display:flex;gap:.5rem;flex-wrap:wrap}
+.svc-actions .btn{flex:1;min-width:7rem}
+.svc-form .row{margin-bottom:.65rem}
+.add-service{margin-bottom:.25rem}
+
 /* Tip: tap/hover "?" next to a label — bubble anchors to the field, not the icon */
 .grid2>div,.field-tip{position:relative}
 .tip{display:inline-flex;align-items:center;margin-left:.35rem;vertical-align:middle}
@@ -412,12 +432,24 @@ function patch(body) {
 }
 
 /* ---------- Services ---------- */
+function fmtPrice(cents) {
+  if (cents == null) return "—";
+  const n = Number(cents) / 100;
+  return Number.isInteger(n) ? `$${n}` : `$${n.toFixed(2)}`;
+}
+
 async function viewServices() {
-  app.innerHTML = `<div id="msg" class="msg"></div><div id="list">Loading…</div>
-    <h2>Add a service</h2><div id="create"></div>`;
+  app.innerHTML = `<div id="msg" class="msg"></div>
+    <details class="add-booking add-service" id="add-svc">
+      <summary>Add a service</summary>
+      <div id="create"></div>
+    </details>
+    <div id="list">Loading…</div>`;
   document.getElementById("create").appendChild(serviceForm({}, async (body) => {
     await api("/api/admin/services", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    showMsg("Service created."); load();
+    showMsg("Service created.");
+    document.getElementById("add-svc").open = false;
+    load();
   }));
   await load();
 
@@ -425,37 +457,106 @@ async function viewServices() {
     const list = document.getElementById("list");
     try {
       const data = await api("/api/admin/services");
-      list.innerHTML = "";
-      data.services.forEach((s) => {
-        const wrap = document.createElement("div");
-        wrap.style.borderBottom = "1px solid var(--hairline)";
-        wrap.style.padding = ".75rem 0";
-        wrap.appendChild(serviceForm(s, async (body) => {
-          await api(`/api/admin/services/${s.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-          showMsg("Saved."); load();
-        }, async () => {
-          if (!confirm(`Delete "${s.name}"? (Services with bookings are deactivated instead.)`)) return;
-          await api(`/api/admin/services/${s.id}`, { method: "DELETE" });
-          showMsg("Removed."); load();
-        }));
-        list.appendChild(wrap);
+      if (!data.services.length) {
+        list.innerHTML = `<p><small class="hint">No services yet. Add one above.</small></p>`;
+        return;
+      }
+      list.innerHTML = `<div class="svc-list">${data.services.map((s, idx) => {
+        const n = idx + 1;
+        const inactive = s.active === 0;
+        return `<div class="svc-item ${inactive ? "is-inactive" : ""}" data-id="${s.id}">
+          <button type="button" class="svc-summary" aria-expanded="false">
+            <span class="svc-num">${n}</span>
+            <span class="svc-name">${esc(s.name)}${inactive ? ` <span class="day-badge off">Inactive</span>` : ""}</span>
+            <span class="svc-meta">${fmtPrice(s.price_cents)} · ${s.duration_min}m</span>
+            <span class="svc-chevron" aria-hidden="true">›</span>
+          </button>
+          <div class="svc-body"></div>
+        </div>`;
+      }).join("")}</div>`;
+
+      list.querySelectorAll(".svc-item").forEach((item) => {
+        const s = data.services.find((x) => String(x.id) === item.dataset.id);
+        const body = item.querySelector(".svc-body");
+        const summary = item.querySelector(".svc-summary");
+        summary.onclick = () => {
+          const open = item.classList.toggle("is-open");
+          summary.setAttribute("aria-expanded", open ? "true" : "false");
+          if (open && !body.dataset.ready) {
+            renderDetails(body, s, () => load());
+            body.dataset.ready = "1";
+          }
+        };
       });
     } catch (e) { list.innerHTML = `<p class="msg err">${esc(e.message)}</p>`; }
   }
 }
+
+function renderDetails(body, s, onChanged) {
+  body.innerHTML = "";
+  const view = document.createElement("div");
+  view.className = "svc-view";
+  view.innerHTML = `
+    <div class="svc-details">
+      <div><span class="svc-detail-label">Description</span><span>${esc(s.description || "—")}</span></div>
+      <div><span class="svc-detail-label">Price</span><span>${fmtPrice(s.price_cents)}</span></div>
+      <div><span class="svc-detail-label">Duration</span><span>${s.duration_min} min</span></div>
+      <div><span class="svc-detail-label">Buffer</span><span>${s.buffer_before_min || 0} before · ${s.buffer_after_min || 0} after</span></div>
+      <div><span class="svc-detail-label">Sort order</span><span>${s.sort_order ?? 0}</span></div>
+      <div><span class="svc-detail-label">Active</span><span>${s.active === 0 ? "No" : "Yes"}</span></div>
+    </div>
+    <div class="svc-actions">
+      <button class="btn" type="button" data-edit>Edit</button>
+      <button class="btn danger" type="button" data-del>Delete</button>
+    </div>`;
+  body.appendChild(view);
+
+  view.querySelector("[data-edit]").onclick = () => {
+    body.innerHTML = "";
+    const formWrap = document.createElement("div");
+    formWrap.className = "svc-form";
+    const form = serviceForm(s, async (payload) => {
+      await api(`/api/admin/services/${s.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      showMsg("Saved.");
+      onChanged();
+    }, async () => {
+      if (!confirm(`Delete "${s.name}"? (Services with bookings are deactivated instead.)`)) return;
+      await api(`/api/admin/services/${s.id}`, { method: "DELETE" });
+      showMsg("Removed.");
+      onChanged();
+    });
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "btn secondary";
+    cancel.textContent = "Cancel";
+    cancel.onclick = () => { body.dataset.ready = ""; renderDetails(body, s, onChanged); body.dataset.ready = "1"; };
+    form.appendChild(cancel);
+    formWrap.appendChild(form);
+    body.appendChild(formWrap);
+  };
+  view.querySelector("[data-del]").onclick = async () => {
+    if (!confirm(`Delete "${s.name}"? (Services with bookings are deactivated instead.)`)) return;
+    try {
+      await api(`/api/admin/services/${s.id}`, { method: "DELETE" });
+      showMsg("Removed.");
+      onChanged();
+    } catch (e) { showMsg(e.message, true); }
+  };
+}
+
 function serviceForm(s, onSave, onDelete) {
   const f = document.createElement("form");
   f.className = "row";
   const priceVal = s.price_cents != null ? (s.price_cents / 100).toFixed(2).replace(/\.00$/, "") : "";
   f.innerHTML = `
-    <div><label>Name</label><input name="name" required value="${esc(s.name || "")}" style="width:150px"></div>
-    <div><label>Description</label><input name="description" value="${esc(s.description || "")}" style="width:190px"></div>
-    <div><label>Price ($)</label><input name="price" type="number" min="0" step="0.01" value="${priceVal}" style="width:85px"></div>
-    <div><label>Duration (min)</label><input name="duration_min" type="number" min="5" max="480" required value="${s.duration_min || 30}" style="width:90px"></div>
-    <div><label>Buffer before</label><input name="buffer_before_min" type="number" min="0" value="${s.buffer_before_min || 0}" style="width:80px"></div>
-    <div><label>Buffer after</label><input name="buffer_after_min" type="number" min="0" value="${s.buffer_after_min || 0}" style="width:80px"></div>
-    <div><label>Order</label><input name="sort_order" type="number" value="${s.sort_order || 0}" style="width:70px"></div>
-    <div><label>Active</label><select name="active" style="width:80px"><option value="1" ${s.active !== 0 ? "selected" : ""}>Yes</option><option value="0" ${s.active === 0 ? "selected" : ""}>No</option></select></div>
+    <div><label>Name</label><input name="name" required value="${esc(s.name || "")}"></div>
+    <div><label>Description</label><input name="description" value="${esc(s.description || "")}"></div>
+    <div><label>Price ($)</label><input name="price" type="number" min="0" step="0.01" value="${priceVal}"></div>
+    <div><label>Duration (min)</label><input name="duration_min" type="number" min="5" max="480" required value="${s.duration_min || 30}"></div>
+    <div><label>Buffer before</label><input name="buffer_before_min" type="number" min="0" value="${s.buffer_before_min || 0}"></div>
+    <div><label>Buffer after</label><input name="buffer_after_min" type="number" min="0" value="${s.buffer_after_min || 0}"></div>
+    <div><label>Order</label><input name="sort_order" type="number" value="${s.sort_order || 0}"></div>
+    <div><label>Active</label><select name="active"><option value="1" ${s.active !== 0 ? "selected" : ""}>Yes</option><option value="0" ${s.active === 0 ? "selected" : ""}>No</option></select></div>
     <button class="btn" type="submit">${s.id ? "Save" : "Add"}</button>
     ${onDelete ? '<button class="btn danger" type="button" data-del>Delete</button>' : ""}`;
   f.onsubmit = async (e) => {
