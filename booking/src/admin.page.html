@@ -78,7 +78,7 @@ a.tel:active{opacity:.7}
 .day-badge.off{color:var(--red);border-color:rgba(170,51,51,.35);background:rgba(170,51,51,.06)}
 .day-seats{display:flex;align-items:center;gap:.4rem;flex:0 0 auto}
 .day-seats label{margin:0;font-size:.66rem}
-.day-seats input{width:4.5rem;min-height:36px;padding:.3rem .4rem}
+.day-seats input{width:5.75rem;min-height:36px;padding:.3rem .45rem}
 .win-list{display:flex;flex-direction:column;gap:.4rem}
 .win-row{display:flex;align-items:center;gap:.4rem}
 .win-row input[type=time]{flex:1;min-width:0;min-height:40px}
@@ -544,7 +544,7 @@ async function viewHours() {
           </div>
           <div class="day-seats">
             <label>Seats</label>
-            <input type="number" class="daycap" data-dow="${dow}" min="1" max="50" placeholder="def"
+            <input type="number" class="daycap" data-dow="${dow}" min="1" max="50" placeholder="default"
               value="${dayCap[dow] ?? ""}" inputmode="numeric">
           </div>
         </div>
