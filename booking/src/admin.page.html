@@ -69,28 +69,34 @@ a.tel:active{opacity:.7}
 .desktop-table{display:none}
 
 /* Hours & closures */
-.hours-list{display:flex;flex-direction:column;gap:.65rem;margin:1rem 0}
-.day-card{border:1px solid var(--hairline);border-radius:10px;padding:.75rem .85rem;background:var(--white)}
-.day-card.is-closed{background:#f7f3ea}
-.day-card-head{display:flex;align-items:center;justify-content:space-between;gap:.75rem;margin-bottom:.55rem}
-.day-card-head strong{font-size:1rem}
-.day-badge{font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);border:1px solid var(--hairline);border-radius:999px;padding:.1rem .5rem}
+.day-badge{font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);border:1px solid var(--hairline);border-radius:999px;padding:.1rem .5rem;white-space:nowrap}
 .day-badge.off{color:var(--red);border-color:rgba(170,51,51,.35);background:rgba(170,51,51,.06)}
-.day-seats{display:flex;align-items:center;gap:.4rem;flex:0 0 auto}
+.day-badge.on{color:var(--green);border-color:rgba(46,125,79,.35);background:rgba(46,125,79,.08)}
+.hours-list{display:flex;flex-direction:column;gap:.5rem;margin:.75rem 0 1rem}
+.day-item{border:1px solid var(--hairline);border-radius:10px;background:var(--white);overflow:hidden}
+.day-item.is-closed-day{background:#f7f3ea}
+.day-summary{display:flex;align-items:center;gap:.65rem;width:100%;padding:.75rem .85rem;border:none;background:transparent;font:inherit;color:inherit;text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.day-summary .day-name{font-weight:600;flex:0 0 auto}
+.day-summary .day-hours{flex:1;min-width:0;font-size:.85rem;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.day-body{display:none;padding:0 .85rem .85rem;border-top:1px solid var(--hairline)}
+.day-item.is-open .day-body{display:block}
+.day-item.is-open .svc-chevron{transform:rotate(90deg)}
+.day-details{padding:.75rem 0;display:grid;gap:.4rem;font-size:.92rem}
+.day-details .line{display:grid;grid-template-columns:5.5rem 1fr;gap:.5rem}
+.day-details .svc-detail-label{padding-top:.1rem}
+.day-seats{display:flex;align-items:center;gap:.4rem;margin:.5rem 0}
 .day-seats label{margin:0;font-size:.66rem}
-.day-seats input{width:5.75rem;min-height:36px;padding:.3rem .45rem}
+.day-seats input{width:5.75rem;min-height:40px;padding:.3rem .45rem}
 .win-list{display:flex;flex-direction:column;gap:.4rem}
 .win-row{display:flex;align-items:center;gap:.4rem}
 .win-row input[type=time]{flex:1;min-width:0;min-height:40px}
 .win-row .dash{color:var(--muted);flex:0 0 auto}
 .win-row .btn-icon{flex:0 0 auto;width:2.4rem;min-height:40px;padding:0;border-radius:8px;display:inline-flex;align-items:center;justify-content:center}
-.day-card-actions{margin-top:.5rem}
-.day-card-actions .btn{min-height:36px;padding:.35rem .85rem;font-size:.85rem}
-.hours-save{position:sticky;bottom:.75rem;z-index:3;width:100%;margin-top:.75rem;box-shadow:0 4px 16px rgba(38,32,22,.18)}
-.closure-list{display:flex;flex-direction:column;gap:.5rem;margin:.75rem 0}
-.closure-card{display:flex;align-items:center;justify-content:space-between;gap:.75rem;border:1px solid var(--hairline);border-radius:10px;padding:.65rem .8rem;background:var(--white)}
+.hours-save{position:sticky;bottom:.75rem;z-index:3;width:100%;margin-top:.5rem;box-shadow:0 4px 16px rgba(38,32,22,.18)}
+.closure-list{display:flex;flex-direction:column;gap:.45rem;margin:.75rem 0}
+.closure-card{display:flex;align-items:center;justify-content:space-between;gap:.75rem;border:1px solid var(--hairline);border-radius:10px;padding:.65rem .85rem;background:var(--white)}
 .closure-card .when{font-weight:600}
-.closure-add{border:1px dashed var(--hairline);border-radius:10px;padding:.85rem;margin-top:.5rem;background:#fdfbf5}
+.closure-card .btn{flex:0 0 auto;min-height:36px;padding:.35rem .9rem;width:auto}
 
 /* Services list */
 .svc-list{display:flex;flex-direction:column;gap:.5rem;margin-top:.75rem}
@@ -187,6 +193,12 @@ function minToTime(min) {
 function timeToMin(t) {
   const [h, m] = (t || "0:0").split(":").map(Number);
   return h * 60 + m;
+}
+function fmtMin(min) {
+  const h = Math.floor(min / 60), m = min % 60;
+  const ampm = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 || 12;
+  return h12 + ":" + String(m).padStart(2, "0") + " " + ampm;
 }
 function staffList() {
   return STAFF.map((s) => s.name);
@@ -622,92 +634,164 @@ async function viewStaff() {
 
 /* ---------- Hours & closures ---------- */
 async function viewHours() {
+  const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
   app.innerHTML = `<div id="msg" class="msg"></div>
     <h2 style="margin-top:0">Weekly hours &amp; seats</h2>
-    <p class="schedule-lead">Remove all time windows to mark a day closed. Seats override the Settings default for that day. Times are salon-local.</p>
+    <p class="schedule-lead">Tap a day for details. Edit only when you need to change it. Remove all time windows to mark a day closed.</p>
     <div id="hours">Loading…</div>
     <h2>Closures (holidays)</h2>
-    <p class="schedule-lead">Full days the salon is closed (holidays, vacations).</p>
     <div id="closures">Loading…</div>`;
-  const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
   const data = await api("/api/admin/hours");
-  let rows = data.hours;
-  let dayCap = data.day_capacity || {};
+  let rows = data.hours.map((r) => ({ ...r }));
+  let dayCap = { ...(data.day_capacity || {}) };
+  let openDow = null;
+  let editingDow = null;
+  let snapshot = null;
   const hoursDiv = document.getElementById("hours");
   drawHours();
 
-  function syncTimesFromDom() {
+  function windowsFor(dow) {
+    return rows.map((r, i) => ({ ...r, i })).filter((r) => r.dow === dow);
+  }
+  function hoursLabel(dow) {
+    const wins = windowsFor(dow);
+    if (!wins.length) return "Closed";
+    return wins.map((w) => fmtMin(w.open_min) + "–" + fmtMin(w.close_min)).join(", ");
+  }
+  function seatsLabel(dow) {
+    return dayCap[dow] != null ? dayCap[dow] + " seats" : "default seats";
+  }
+
+  function syncEditFromDom() {
+    if (editingDow == null) return;
     hoursDiv.querySelectorAll(".win-row[data-i]").forEach((row) => {
       const i = +row.dataset.i;
+      if (!rows[i] || rows[i].dow !== editingDow) return;
       rows[i].open_min = timeToMin(row.querySelector(".open").value);
       rows[i].close_min = timeToMin(row.querySelector(".close").value);
     });
+    const cap = hoursDiv.querySelector(".daycap");
+    if (cap) {
+      if (cap.value) dayCap[editingDow] = parseInt(cap.value, 10);
+      else delete dayCap[editingDow];
+    }
+  }
+
+  async function saveHours() {
+    syncEditFromDom();
+    await api("/api/admin/hours", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hours: rows, day_capacity: dayCap }),
+    });
+    showMsg("Hours & seats saved.");
+    editingDow = null;
+    snapshot = null;
+    drawHours();
   }
 
   function drawHours() {
     hoursDiv.innerHTML = `<div class="hours-list">${DAYS.map((name, dow) => {
-      const dayRows = rows.map((r, i) => ({ ...r, i })).filter((r) => r.dow === dow);
-      const closed = dayRows.length === 0;
-      return `<div class="day-card ${closed ? "is-closed" : ""}" data-dow="${dow}">
-        <div class="day-card-head">
-          <div>
-            <strong>${name}</strong>
-            ${closed ? `<span class="day-badge off">Closed</span>` : `<span class="day-badge">Open</span>`}
-          </div>
-          <div class="day-seats">
-            <label>Seats</label>
-            <input type="number" class="daycap" data-dow="${dow}" min="1" max="50" placeholder="default"
-              value="${dayCap[dow] ?? ""}" inputmode="numeric">
-          </div>
+      const closed = windowsFor(dow).length === 0;
+      const isOpen = openDow === dow;
+      return `<div class="day-item ${closed ? "is-closed-day" : ""} ${isOpen ? "is-open" : ""}" data-dow="${dow}">
+        <button type="button" class="day-summary" aria-expanded="${isOpen}">
+          <span class="day-name">${name}</span>
+          <span class="day-badge ${closed ? "off" : "on"}">${closed ? "Closed" : "Open"}</span>
+          <span class="day-hours">${esc(hoursLabel(dow))} · ${esc(seatsLabel(dow))}</span>
+          <span class="svc-chevron" aria-hidden="true">›</span>
+        </button>
+        <div class="day-body"></div>
+      </div>`;
+    }).join("")}</div>
+    ${editingDow != null ? `<button class="btn hours-save" id="save-hours" type="button">Save changes</button>` : ""}`;
+
+    hoursDiv.querySelectorAll(".day-item").forEach((item) => {
+      const dow = +item.dataset.dow;
+      const body = item.querySelector(".day-body");
+      const summary = item.querySelector(".day-summary");
+      if (openDow === dow) renderDayBody(body, dow);
+      summary.onclick = () => {
+        if (editingDow != null && editingDow !== dow) {
+          if (!confirm("Discard unsaved edits for this day?")) return;
+          rows = snapshot.rows.map((r) => ({ ...r }));
+          dayCap = { ...snapshot.dayCap };
+          editingDow = null;
+          snapshot = null;
+        }
+        openDow = openDow === dow ? null : dow;
+        drawHours();
+      };
+    });
+
+    const saveBtn = document.getElementById("save-hours");
+    if (saveBtn) saveBtn.onclick = () => saveHours().catch((e) => showMsg(e.message, true));
+  }
+
+  function renderDayBody(body, dow) {
+    const name = DAYS[dow];
+    const wins = windowsFor(dow);
+    if (editingDow === dow) {
+      body.innerHTML = `
+        <div class="day-seats">
+          <label>Seats</label>
+          <input type="number" class="daycap" min="1" max="50" placeholder="default"
+            value="${dayCap[dow] ?? ""}" inputmode="numeric">
         </div>
         <div class="win-list">
-          ${dayRows.map((r) => `
+          ${wins.map((r) => `
             <div class="win-row" data-i="${r.i}">
               <input type="time" class="open" value="${minToTime(r.open_min)}" aria-label="${name} open">
               <span class="dash">–</span>
               <input type="time" class="close" value="${minToTime(r.close_min)}" aria-label="${name} close">
               <button class="btn danger btn-icon" type="button" data-rm="${r.i}" aria-label="Remove window">×</button>
-            </div>`).join("")}
+            </div>`).join("") || `<p><small class="hint">No time windows — this day is closed.</small></p>`}
         </div>
-        <div class="day-card-actions">
-          <button class="btn secondary" type="button" data-add="${dow}">+ time window</button>
-        </div>
+        <div class="svc-actions" style="margin-top:.65rem">
+          <button class="btn secondary" type="button" data-add>+ time window</button>
+          <button class="btn" type="button" data-save>Save</button>
+          <button class="btn secondary" type="button" data-cancel>Cancel</button>
+        </div>`;
+      body.querySelector("[data-add]").onclick = () => {
+        syncEditFromDom();
+        rows.push({ dow, open_min: 540, close_min: 1200 });
+        drawHours();
+      };
+      body.querySelectorAll("[data-rm]").forEach((b) => {
+        b.onclick = () => {
+          syncEditFromDom();
+          rows.splice(+b.dataset.rm, 1);
+          drawHours();
+        };
+      });
+      body.querySelector("[data-save]").onclick = () => saveHours().catch((e) => showMsg(e.message, true));
+      body.querySelector("[data-cancel]").onclick = () => {
+        rows = snapshot.rows.map((r) => ({ ...r }));
+        dayCap = { ...snapshot.dayCap };
+        editingDow = null;
+        snapshot = null;
+        drawHours();
+      };
+      return;
+    }
+
+    body.innerHTML = `
+      <div class="day-details">
+        <div class="line"><span class="svc-detail-label">Hours</span><span>${wins.length
+          ? wins.map((w) => esc(fmtMin(w.open_min) + " – " + fmtMin(w.close_min))).join("<br>")
+          : "Closed"}</span></div>
+        <div class="line"><span class="svc-detail-label">Seats</span><span>${dayCap[dow] != null ? dayCap[dow] : "Default (from Settings)"}</span></div>
+      </div>
+      <div class="svc-actions">
+        <button class="btn" type="button" data-edit>Edit</button>
       </div>`;
-    }).join("")}</div>
-    <button class="btn hours-save" id="save-hours" type="button">Save hours &amp; seats</button>`;
-
-    hoursDiv.querySelectorAll("[data-add]").forEach((b) => {
-      b.onclick = () => {
-        syncTimesFromDom();
-        captureDayCap();
-        rows.push({ dow: +b.dataset.add, open_min: 540, close_min: 1200 });
-        drawHours();
-      };
-    });
-    hoursDiv.querySelectorAll("[data-rm]").forEach((b) => {
-      b.onclick = () => {
-        syncTimesFromDom();
-        captureDayCap();
-        rows.splice(+b.dataset.rm, 1);
-        drawHours();
-      };
-    });
-    document.getElementById("save-hours").onclick = async () => {
-      syncTimesFromDom();
-      captureDayCap();
-      try {
-        await api("/api/admin/hours", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ hours: rows, day_capacity: dayCap }) });
-        showMsg("Hours & seats saved.");
-      } catch (e) { showMsg(e.message, true); }
+    body.querySelector("[data-edit]").onclick = () => {
+      snapshot = { rows: rows.map((r) => ({ ...r })), dayCap: { ...dayCap } };
+      editingDow = dow;
+      openDow = dow;
+      drawHours();
     };
-  }
-
-  function captureDayCap() {
-    dayCap = {};
-    hoursDiv.querySelectorAll(".daycap").forEach((inp) => {
-      if (inp.value) dayCap[inp.dataset.dow] = parseInt(inp.value, 10);
-    });
   }
 
   await loadClosures();
@@ -724,24 +808,28 @@ async function viewHours() {
             <button class="btn danger" type="button" data-date="${esc(c.date)}">Remove</button>
           </div>`).join("")}</div>`
       : `<p><small class="hint">No closures scheduled.</small></p>`;
-    div.innerHTML = list + `
-      <div class="closure-add">
-        <div class="row" style="margin-bottom:0">
-          <div><label>Date</label><input type="date" id="cl-date"></div>
+    div.innerHTML = `
+      <details class="add-booking add-service" id="add-closure">
+        <summary>Add closure</summary>
+        <form id="closure-form" class="row" style="margin:0">
+          <div><label>Date</label><input type="date" id="cl-date" required></div>
           <div><label>Reason</label><input id="cl-reason" placeholder="e.g. Thanksgiving"></div>
-          <button class="btn" id="cl-add" type="button">Add closure</button>
-        </div>
-      </div>`;
+          <button class="btn" type="submit">Add</button>
+        </form>
+      </details>
+      ${list}`;
     div.querySelectorAll("[data-date]").forEach((b) => {
       b.onclick = async () => { await api(`/api/admin/closures/${b.dataset.date}`, { method: "DELETE" }); loadClosures(); };
     });
-    document.getElementById("cl-add").onclick = async () => {
+    document.getElementById("closure-form").onsubmit = async (e) => {
+      e.preventDefault();
       const date = document.getElementById("cl-date").value;
       if (!date) return showMsg("Pick a date", true);
       try {
         await api("/api/admin/closures", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ date, reason: document.getElementById("cl-reason").value }) });
+        document.getElementById("add-closure").open = false;
         loadClosures();
-      } catch (e) { showMsg(e.message, true); }
+      } catch (err) { showMsg(err.message, true); }
     };
   }
 }
