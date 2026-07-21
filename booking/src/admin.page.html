@@ -111,6 +111,10 @@ a.tel:active{opacity:.7}
 .svc-actions .btn{flex:1;min-width:7rem}
 .svc-form .row{margin-bottom:.65rem}
 .add-service{margin-bottom:.25rem}
+.staff-list{display:flex;flex-direction:column;gap:.45rem;margin-top:.75rem}
+.staff-row{display:flex;align-items:center;justify-content:space-between;gap:.75rem;border:1px solid var(--hairline);border-radius:10px;padding:.65rem .85rem;background:var(--white)}
+.staff-row .name{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.staff-row .btn{flex:0 0 auto;min-height:36px;padding:.35rem .9rem;width:auto}
 
 /* Tip: tap/hover "?" next to a label — bubble anchors to the field, not the icon */
 .grid2>div,.field-tip{position:relative}
@@ -573,21 +577,27 @@ function serviceForm(s, onSave, onDelete) {
 /* ---------- Staff ---------- */
 async function viewStaff() {
   app.innerHTML = `<div id="msg" class="msg"></div>
-    <p><small class="hint">Employees listed here appear in the “assigned to” dropdown on bookings. Removing one keeps their name on past bookings.</small></p>
-    <div id="staff-list" style="margin-top:1rem">Loading…</div>
-    <div class="row" style="margin-top:1rem">
-      <div><label>Name</label><input id="staff-name" placeholder="e.g. Mia"></div>
-      <button class="btn" id="staff-add">Add employee</button>
-    </div>`;
+    <details class="add-booking add-service" id="add-staff">
+      <summary>Add employee</summary>
+      <form id="staff-form" class="row" style="margin:0">
+        <div><label>Name</label><input id="staff-name" required placeholder="e.g. Mia" autocomplete="name"></div>
+        <button class="btn" type="submit">Add</button>
+      </form>
+    </details>
+    <p class="schedule-lead">These names appear in the “assigned to” dropdown on bookings. Removing one keeps their name on past bookings.</p>
+    <div id="staff-list">Loading…</div>`;
   await load();
 
   async function load() {
     await refreshStaff();
     const div = document.getElementById("staff-list");
     div.innerHTML = STAFF.length
-      ? STAFF.map((s) => `<div class="row" style="margin-bottom:.25rem"><div style="width:220px">${esc(s.name)}</div>
-          <button class="btn danger" type="button" data-id="${s.id}">Remove</button></div>`).join("")
-      : "<p><small class='hint'>No employees yet.</small></p>";
+      ? `<div class="staff-list">${STAFF.map((s) => `
+          <div class="staff-row">
+            <span class="name">${esc(s.name)}</span>
+            <button class="btn danger" type="button" data-id="${s.id}">Remove</button>
+          </div>`).join("")}</div>`
+      : "<p><small class='hint'>No employees yet. Add one above.</small></p>";
     div.querySelectorAll("[data-id]").forEach((b) => {
       b.onclick = async () => {
         if (!confirm("Remove this employee from the list?")) return;
@@ -596,15 +606,17 @@ async function viewStaff() {
       };
     });
   }
-  document.getElementById("staff-add").onclick = async () => {
+  document.getElementById("staff-form").onsubmit = async (e) => {
+    e.preventDefault();
     const name = document.getElementById("staff-name").value.trim();
     if (!name) return showMsg("Enter a name", true);
     try {
       await api("/api/admin/staff", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
       document.getElementById("staff-name").value = "";
+      document.getElementById("add-staff").open = false;
       showMsg("Employee added.");
       load();
-    } catch (e) { showMsg(e.message, true); }
+    } catch (err) { showMsg(err.message, true); }
   };
 }
 
