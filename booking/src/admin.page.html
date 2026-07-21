@@ -51,6 +51,23 @@ a.tel:active{opacity:.7}
 .schedule-section>h2{margin:0 0 .35rem;font-size:1.05rem}
 .schedule-lead{margin:0 0 1rem;font-size:.88rem;color:var(--muted)}
 
+/* Booking cards (readable on phone; table only on wide screens) */
+.booking-card{border:1px solid var(--hairline);border-radius:10px;padding:.85rem 1rem;margin:.65rem 0;background:var(--white);box-shadow:0 1px 3px rgba(38,32,22,.06)}
+.booking-card.is-cancelled{opacity:.55}
+.booking-card.is-cancelled .bc-name,.booking-card.is-cancelled .bc-time{text-decoration:line-through}
+.bc-top{display:flex;align-items:flex-start;justify-content:space-between;gap:.75rem;margin-bottom:.45rem}
+.bc-time{font-size:1.15rem;font-weight:700;line-height:1.2}
+.bc-service{font-size:.95rem;margin-top:.1rem}
+.bc-code{display:block;margin-top:.1rem}
+.bc-meta{display:grid;gap:.35rem;margin:.55rem 0 .7rem}
+.bc-row{display:grid;grid-template-columns:76px 1fr;gap:.5rem;align-items:center;font-size:.92rem}
+.bc-row>span:first-child{font-size:.66rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}
+.bc-name{font-weight:600}
+.bc-row select{width:100%;min-width:0}
+.bc-actions{margin-top:.15rem}
+.bc-actions .btn{width:100%}
+.desktop-table{display:none}
+
 /* Tip: tap/hover "?" next to a label */
 .tip{position:relative;display:inline-flex;align-items:center;margin-left:.35rem;vertical-align:middle}
 .tip>button{appearance:none;-webkit-appearance:none;border:1px solid var(--hairline);background:var(--cream);color:var(--soft);width:1.35rem;height:1.35rem;border-radius:50%;font:600 .72rem/1 system-ui,sans-serif;padding:0;cursor:help}
@@ -76,22 +93,13 @@ a.tel:active{opacity:.7}
   .row{flex-direction:column;align-items:stretch;gap:.65rem}
   .row>div>input,.row>div>select{width:100% !important}
   .row>button{width:100%}
-  /* Bookings: table rows become cards */
-  .day-group table,.day-group tbody,.day-group tr,.day-group td{display:block;width:100%}
-  .day-group thead{display:none}
-  .day-group tr{position:relative;border:1px solid var(--hairline);border-radius:10px;padding:.7rem .85rem;margin:.6rem 0;background:var(--white);box-shadow:0 1px 3px rgba(38,32,22,.06)}
-  .day-group td{border:none;padding:.18rem 0;display:flex;gap:.6rem;align-items:center;flex-wrap:wrap}
-  .day-group td::before{content:attr(data-label);flex:0 0 76px;font-size:.66rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}
-  .day-group td[data-label="Time"]{padding-right:5.2rem}
-  .day-group td[data-label="Time"]::before{display:none}
-  .day-group td[data-label="Time"] strong{font-size:1.1rem}
-  .day-group td[data-label="Status"]{position:absolute;top:.55rem;right:.85rem;width:auto;padding:0}
-  .day-group td[data-label="Status"]::before{display:none}
-  .day-group td[data-label="Assign"] select{flex:1;min-width:0}
-  .day-group td:last-child{padding-top:.45rem}
-  .day-group td:last-child::before{display:none}
-  .day-group td:last-child .btn{width:100%}
-  .day-heading{position:sticky;top:0;background:var(--white);z-index:2}
+  .day-heading{position:sticky;top:0;background:var(--white);z-index:2;padding:.35rem 0}
+}
+
+@media (min-width: 721px) {
+  .booking-cards{display:none}
+  .desktop-table{display:table}
+  .bc-actions .btn{width:auto}
 }
 </style>
 </head>
@@ -285,27 +293,49 @@ async function viewBookings() {
         if (!byDate.has(b.date)) byDate.set(b.date, []);
         byDate.get(b.date).push(b);
       }
-      const rowHtml = (b) => {
+      const assignSelect = (b) => `<select class="assign">
+        <option value="">— unassigned —</option>
+        ${staff.map((s) => `<option value="${esc(s)}" ${b.assigned_to === s ? "selected" : ""}>${esc(s)}</option>`).join("")}
+        ${b.assigned_to && !staff.includes(b.assigned_to) ? `<option value="${esc(b.assigned_to)}" selected>${esc(b.assigned_to)}</option>` : ""}
+      </select>`;
+      const actionBtn = (b) => b.status === "confirmed"
+        ? `<button class="btn danger cancel" type="button">Cancel</button>`
+        : `<button class="btn secondary restore" type="button">Restore</button>`;
+      const contactHtml = (b) => {
         const phone = b.customer_phone
           ? `<a class="tel" href="tel:${esc(b.customer_phone)}">${esc(b.customer_phone)}</a>` : "";
         const email = b.customer_email
           ? `<a class="tel" href="mailto:${esc(b.customer_email)}">${esc(b.customer_email)}</a>` : "";
-        const contact = [phone, email].filter(Boolean).join(" · ");
-        return `
-        <tr class="${b.status === "cancelled" ? "cancelled" : ""}" data-id="${b.id}">
-          <td data-label="Time"><strong>${esc(b.time)}</strong></td>
-          <td data-label="Service">${esc(b.service)}<br><small class="hint">${esc(b.code)}</small></td>
-          <td data-label="Customer">${esc(b.customer_name)}${contact ? `<br><small class="hint">${contact}</small>` : ""}${b.notes ? `<br><small class="hint">“${esc(b.notes)}”</small>` : ""}</td>
-          <td data-label="Party">${b.party_size}</td>
-          <td data-label="Assign"><select class="assign">
-            <option value="">— unassigned —</option>
-            ${staff.map((s) => `<option value="${esc(s)}" ${b.assigned_to === s ? "selected" : ""}>${esc(s)}</option>`).join("")}
-            ${b.assigned_to && !staff.includes(b.assigned_to) ? `<option value="${esc(b.assigned_to)}" selected>${esc(b.assigned_to)}</option>` : ""}
-          </select></td>
-          <td data-label="Status"><span class="pill ${b.status === "cancelled" ? "off" : ""}">${esc(b.status)}</span></td>
-          <td>${b.status === "confirmed"
-            ? `<button class="btn danger cancel">Cancel</button>`
-            : `<button class="btn secondary restore">Restore</button>`}</td>
+        return [phone, email].filter(Boolean).join(" · ");
+      };
+      const cardHtml = (b) => {
+        const contact = contactHtml(b);
+        return `<article class="booking-card ${b.status === "cancelled" ? "is-cancelled" : ""}" data-id="${b.id}">
+          <div class="bc-top">
+            <div>
+              <div class="bc-time">${esc(b.time)}</div>
+              <div class="bc-service">${esc(b.service)} <small class="hint bc-code">${esc(b.code)}</small></div>
+            </div>
+            <span class="pill ${b.status === "cancelled" ? "off" : ""}">${esc(b.status)}</span>
+          </div>
+          <div class="bc-meta">
+            <div class="bc-row"><span>Customer</span><div><span class="bc-name">${esc(b.customer_name)}</span>${contact ? `<br><small class="hint">${contact}</small>` : ""}${b.notes ? `<br><small class="hint">“${esc(b.notes)}”</small>` : ""}</div></div>
+            <div class="bc-row"><span>Party</span><div>${b.party_size}</div></div>
+            <div class="bc-row"><span>Assign</span><div>${assignSelect(b)}</div></div>
+          </div>
+          <div class="bc-actions">${actionBtn(b)}</div>
+        </article>`;
+      };
+      const rowHtml = (b) => {
+        const contact = contactHtml(b);
+        return `<tr class="${b.status === "cancelled" ? "cancelled" : ""}" data-id="${b.id}">
+          <td><strong>${esc(b.time)}</strong></td>
+          <td>${esc(b.service)}<br><small class="hint">${esc(b.code)}</small></td>
+          <td>${esc(b.customer_name)}${contact ? `<br><small class="hint">${contact}</small>` : ""}${b.notes ? `<br><small class="hint">“${esc(b.notes)}”</small>` : ""}</td>
+          <td>${b.party_size}</td>
+          <td>${assignSelect(b)}</td>
+          <td><span class="pill ${b.status === "cancelled" ? "off" : ""}">${esc(b.status)}</span></td>
+          <td>${actionBtn(b)}</td>
         </tr>`;
       };
       list.innerHTML = [...byDate.entries()].map(([date, bookings]) => {
@@ -315,7 +345,8 @@ async function viewBookings() {
             <h3>${esc(longDate(date))}</h3>
             <span class="count">${n} booking${n === 1 ? "" : "s"}</span>
           </div>
-          <table><thead><tr>
+          <div class="booking-cards">${bookings.map(cardHtml).join("")}</div>
+          <table class="desktop-table"><thead><tr>
             <th>Time</th><th>Service</th><th>Customer</th><th>Party</th><th>Assigned to</th><th>Status</th><th></th>
           </tr></thead><tbody>
             ${bookings.map(rowHtml).join("")}
@@ -325,7 +356,7 @@ async function viewBookings() {
 
       list.querySelectorAll(".assign").forEach((sel) => {
         sel.onchange = async () => {
-          const id = sel.closest("tr").dataset.id;
+          const id = sel.closest("[data-id]").dataset.id;
           try { await api(`/api/admin/bookings/${id}`, patch({ assigned_to: sel.value })); showMsg("Assigned."); }
           catch (e) { showMsg(e.message, true); }
         };
@@ -333,14 +364,14 @@ async function viewBookings() {
       list.querySelectorAll(".cancel").forEach((btn) => {
         btn.onclick = async () => {
           if (!confirm("Cancel this booking?")) return;
-          const id = btn.closest("tr").dataset.id;
+          const id = btn.closest("[data-id]").dataset.id;
           try { await api(`/api/admin/bookings/${id}`, patch({ status: "cancelled" })); loadBookings(); }
           catch (e) { showMsg(e.message, true); }
         };
       });
       list.querySelectorAll(".restore").forEach((btn) => {
         btn.onclick = async () => {
-          const id = btn.closest("tr").dataset.id;
+          const id = btn.closest("[data-id]").dataset.id;
           try { await api(`/api/admin/bookings/${id}`, patch({ status: "confirmed" })); loadBookings(); }
           catch (e) { showMsg(e.message, true); }
         };
