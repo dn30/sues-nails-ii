@@ -652,12 +652,13 @@ async function viewSettings() {
     </form>
     <p style="margin-top:1rem"><button class="btn" id="save">Save settings</button></p>`;
 
-  // Tap to toggle tip on phones; close others / outside clicks.
+  // Tap ? to toggle; tap outside closes via the global listener below.
   app.querySelectorAll(".tip").forEach((el) => {
     el.querySelector("button").onclick = (e) => {
       e.preventDefault();
+      e.stopPropagation();
       const open = el.classList.contains("is-open");
-      app.querySelectorAll(".tip.is-open").forEach((t) => t.classList.remove("is-open"));
+      closeAllTips();
       if (!open) el.classList.add("is-open");
     };
   });
@@ -672,9 +673,24 @@ async function viewSettings() {
 }
 
 /* ---------- boot ---------- */
+function closeAllTips() {
+  document.querySelectorAll(".tip.is-open").forEach((t) => {
+    t.classList.remove("is-open");
+    const btn = t.querySelector("button");
+    if (btn) btn.blur();
+  });
+}
+// Tap/click outside an open tip closes it (needed on phones — no hover).
+document.addEventListener("pointerdown", (e) => {
+  if (!document.querySelector(".tip.is-open")) return;
+  if (e.target.closest(".tip")) return;
+  closeAllTips();
+}, true);
+
 const views = { bookings: viewBookings, services: viewServices, staff: viewStaff, hours: viewHours, settings: viewSettings };
 document.querySelectorAll(".tabs button").forEach((b) => {
   b.onclick = () => {
+    closeAllTips();
     document.querySelectorAll(".tabs button").forEach((x) => x.classList.remove("active"));
     b.classList.add("active");
     views[b.dataset.tab]().catch((e) => { app.innerHTML = `<p class="msg err">${esc(e.message)}</p>`; });
