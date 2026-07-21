@@ -37,6 +37,51 @@ small.hint{color:var(--muted)}
 .day-heading{display:flex;align-items:baseline;justify-content:space-between;gap:1rem;padding:.55rem 0;border-bottom:2px solid var(--ink);margin-bottom:.35rem}
 .day-heading h3{font-size:1.05rem;font-weight:700}
 .day-heading .count{font-size:.8rem;color:var(--muted);font-weight:500}
+a.tel{color:var(--gold-dark);text-decoration:none}
+a.tel:active{opacity:.7}
+
+/* Collapsible "Add a booking" panel */
+.add-booking{border:1px solid var(--hairline);border-radius:10px;background:#fdfbf5;margin-bottom:1.25rem}
+.add-booking summary{list-style:none;cursor:pointer;padding:.8rem 1rem;font-weight:600;display:flex;align-items:center;gap:.6rem;-webkit-tap-highlight-color:transparent;user-select:none}
+.add-booking summary::-webkit-details-marker{display:none}
+.add-booking summary::before{content:"+";display:inline-flex;align-items:center;justify-content:center;width:1.45rem;height:1.45rem;border-radius:50%;background:var(--ink);color:var(--cream);font-size:1.05rem;line-height:1;flex:0 0 auto}
+.add-booking[open] summary::before{content:"–"}
+.add-booking form{padding:.15rem 1rem 1rem}
+
+/* ---- Mobile ---- */
+@media (max-width: 720px) {
+  body{padding:.75rem}
+  h1{font-size:1.1rem;margin-bottom:.75rem}
+  .panel{padding:1rem .8rem}
+  /* Tabs: one scrollable line */
+  .tabs{flex-wrap:nowrap;overflow-x:auto;margin:0 -.75rem 1rem;padding:0 .75rem .35rem;scrollbar-width:none}
+  .tabs::-webkit-scrollbar{display:none}
+  .tabs button{flex:0 0 auto;padding:.55rem 1.1rem}
+  /* Comfortable tap targets; 16px stops iOS focus zoom */
+  input:not([type=checkbox]),select,textarea{font-size:16px;min-height:44px}
+  input[type=checkbox]{width:1.15rem;height:1.15rem}
+  button.btn{min-height:44px;padding:.55rem 1.2rem}
+  /* Form rows become stacked, full-width fields */
+  .row{flex-direction:column;align-items:stretch;gap:.65rem}
+  .row>div>input,.row>div>select{width:100% !important}
+  .row>button{width:100%}
+  /* Bookings: table rows become cards */
+  .day-group table,.day-group tbody,.day-group tr,.day-group td{display:block;width:100%}
+  .day-group thead{display:none}
+  .day-group tr{position:relative;border:1px solid var(--hairline);border-radius:10px;padding:.7rem .85rem;margin:.6rem 0;background:var(--white);box-shadow:0 1px 3px rgba(38,32,22,.06)}
+  .day-group td{border:none;padding:.18rem 0;display:flex;gap:.6rem;align-items:center;flex-wrap:wrap}
+  .day-group td::before{content:attr(data-label);flex:0 0 76px;font-size:.66rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}
+  .day-group td[data-label="Time"]{padding-right:5.2rem}
+  .day-group td[data-label="Time"]::before{display:none}
+  .day-group td[data-label="Time"] strong{font-size:1.1rem}
+  .day-group td[data-label="Status"]{position:absolute;top:.55rem;right:.85rem;width:auto;padding:0}
+  .day-group td[data-label="Status"]::before{display:none}
+  .day-group td[data-label="Assign"] select{flex:1;min-width:0}
+  .day-group td:last-child{padding-top:.45rem}
+  .day-group td:last-child::before{display:none}
+  .day-group td:last-child .btn{width:100%}
+  .day-heading{position:sticky;top:0;background:var(--white);z-index:2}
+}
 </style>
 </head>
 <body>
@@ -107,7 +152,8 @@ async function viewBookings() {
   const today = new Date().toISOString().slice(0, 10);
   const in14 = new Date(Date.now() + 14 * 864e5).toISOString().slice(0, 10);
   app.innerHTML = `
-    <h2 style="margin-top:0">Add a booking</h2>
+    <details class="add-booking" id="add-wrap">
+    <summary>Add a booking</summary>
     <form id="add-form">
       <div class="row">
         <div><label>Service</label><select id="ab-service">
@@ -120,7 +166,7 @@ async function viewBookings() {
       </div>
       <div class="row">
         <div><label>Customer name</label><input id="ab-name" required placeholder="e.g. Maria"></div>
-        <div><label>Phone</label><input id="ab-phone" placeholder="optional" style="width:130px"></div>
+        <div><label>Phone</label><input id="ab-phone" type="tel" placeholder="optional" style="width:130px"></div>
         <div><label>Email</label><input id="ab-email" type="email" placeholder="optional" style="width:160px"></div>
         <div><label>Assigned to</label><select id="ab-staff">
           <option value="">— unassigned —</option>
@@ -131,7 +177,7 @@ async function viewBookings() {
         <button class="btn" type="submit">Add booking</button>
       </div>
     </form>
-    <hr style="border:none;border-top:1px solid var(--hairline);margin:1.25rem 0">
+    </details>
     <div class="row">
       <div><label>From</label><input type="date" id="from" value="${today}"></div>
       <div><label>To</label><input type="date" id="to" value="${in14}"></div>
@@ -142,6 +188,10 @@ async function viewBookings() {
     <div id="list">Loading…</div>`;
   document.getElementById("reload").onclick = loadBookings;
   document.getElementById("inc-cancelled").onchange = loadBookings;
+  // Collapsed by default on phones so the day list is the first thing you see.
+  if (window.matchMedia("(min-width: 721px)").matches) {
+    document.getElementById("add-wrap").open = true;
+  }
 
   const abService = document.getElementById("ab-service");
   const abDate = document.getElementById("ab-date");
@@ -220,22 +270,29 @@ async function viewBookings() {
         if (!byDate.has(b.date)) byDate.set(b.date, []);
         byDate.get(b.date).push(b);
       }
-      const rowHtml = (b) => `
+      const rowHtml = (b) => {
+        const phone = b.customer_phone
+          ? `<a class="tel" href="tel:${esc(b.customer_phone)}">${esc(b.customer_phone)}</a>` : "";
+        const email = b.customer_email
+          ? `<a class="tel" href="mailto:${esc(b.customer_email)}">${esc(b.customer_email)}</a>` : "";
+        const contact = [phone, email].filter(Boolean).join(" · ");
+        return `
         <tr class="${b.status === "cancelled" ? "cancelled" : ""}" data-id="${b.id}">
-          <td><strong>${esc(b.time)}</strong></td>
-          <td>${esc(b.service)}<br><small class="hint">${esc(b.code)}</small></td>
-          <td>${esc(b.customer_name)}<br><small class="hint">${esc(b.customer_phone)}${b.customer_email ? " · " + esc(b.customer_email) : ""}</small>${b.notes ? `<br><small class="hint">“${esc(b.notes)}”</small>` : ""}</td>
-          <td>${b.party_size}</td>
-          <td><select class="assign">
+          <td data-label="Time"><strong>${esc(b.time)}</strong></td>
+          <td data-label="Service">${esc(b.service)}<br><small class="hint">${esc(b.code)}</small></td>
+          <td data-label="Customer">${esc(b.customer_name)}${contact ? `<br><small class="hint">${contact}</small>` : ""}${b.notes ? `<br><small class="hint">“${esc(b.notes)}”</small>` : ""}</td>
+          <td data-label="Party">${b.party_size}</td>
+          <td data-label="Assign"><select class="assign">
             <option value="">— unassigned —</option>
             ${staff.map((s) => `<option value="${esc(s)}" ${b.assigned_to === s ? "selected" : ""}>${esc(s)}</option>`).join("")}
             ${b.assigned_to && !staff.includes(b.assigned_to) ? `<option value="${esc(b.assigned_to)}" selected>${esc(b.assigned_to)}</option>` : ""}
           </select></td>
-          <td><span class="pill ${b.status === "cancelled" ? "off" : ""}">${esc(b.status)}</span></td>
+          <td data-label="Status"><span class="pill ${b.status === "cancelled" ? "off" : ""}">${esc(b.status)}</span></td>
           <td>${b.status === "confirmed"
             ? `<button class="btn danger cancel">Cancel</button>`
             : `<button class="btn secondary restore">Restore</button>`}</td>
         </tr>`;
+      };
       list.innerHTML = [...byDate.entries()].map(([date, bookings]) => {
         const n = bookings.length;
         return `<section class="day-group">
