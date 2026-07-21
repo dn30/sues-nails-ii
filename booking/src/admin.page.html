@@ -68,6 +68,30 @@ a.tel:active{opacity:.7}
 .bc-actions .btn{width:100%}
 .desktop-table{display:none}
 
+/* Hours & closures */
+.hours-list{display:flex;flex-direction:column;gap:.65rem;margin:1rem 0}
+.day-card{border:1px solid var(--hairline);border-radius:10px;padding:.75rem .85rem;background:var(--white)}
+.day-card.is-closed{background:#f7f3ea}
+.day-card-head{display:flex;align-items:center;justify-content:space-between;gap:.75rem;margin-bottom:.55rem}
+.day-card-head strong{font-size:1rem}
+.day-badge{font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);border:1px solid var(--hairline);border-radius:999px;padding:.1rem .5rem}
+.day-badge.off{color:var(--red);border-color:rgba(170,51,51,.35);background:rgba(170,51,51,.06)}
+.day-seats{display:flex;align-items:center;gap:.4rem;flex:0 0 auto}
+.day-seats label{margin:0;font-size:.66rem}
+.day-seats input{width:4.5rem;min-height:36px;padding:.3rem .4rem}
+.win-list{display:flex;flex-direction:column;gap:.4rem}
+.win-row{display:flex;align-items:center;gap:.4rem}
+.win-row input[type=time]{flex:1;min-width:0;min-height:40px}
+.win-row .dash{color:var(--muted);flex:0 0 auto}
+.win-row .btn-icon{flex:0 0 auto;width:2.4rem;min-height:40px;padding:0;border-radius:8px;display:inline-flex;align-items:center;justify-content:center}
+.day-card-actions{margin-top:.5rem}
+.day-card-actions .btn{min-height:36px;padding:.35rem .85rem;font-size:.85rem}
+.hours-save{position:sticky;bottom:.75rem;z-index:3;width:100%;margin-top:.75rem;box-shadow:0 4px 16px rgba(38,32,22,.18)}
+.closure-list{display:flex;flex-direction:column;gap:.5rem;margin:.75rem 0}
+.closure-card{display:flex;align-items:center;justify-content:space-between;gap:.75rem;border:1px solid var(--hairline);border-radius:10px;padding:.65rem .8rem;background:var(--white)}
+.closure-card .when{font-weight:600}
+.closure-add{border:1px dashed var(--hairline);border-radius:10px;padding:.85rem;margin-top:.5rem;background:#fdfbf5}
+
 /* Tip: tap/hover "?" next to a label — bubble anchors to the field, not the icon */
 .grid2>div,.field-tip{position:relative}
 .tip{display:inline-flex;align-items:center;margin-left:.35rem;vertical-align:middle}
@@ -487,9 +511,11 @@ async function viewStaff() {
 async function viewHours() {
   app.innerHTML = `<div id="msg" class="msg"></div>
     <h2 style="margin-top:0">Weekly hours &amp; seats</h2>
-    <p><small class="hint">Leave a day blank (no windows) to close that day. “Seats” is how many customers can be served at once that day — blank uses the default from Settings. Times are salon-local.</small></p>
+    <p class="schedule-lead">Remove all time windows to mark a day closed. Seats override the Settings default for that day. Times are salon-local.</p>
     <div id="hours">Loading…</div>
-    <h2>Closures (holidays)</h2><div id="closures">Loading…</div>`;
+    <h2>Closures (holidays)</h2>
+    <p class="schedule-lead">Full days the salon is closed (holidays, vacations).</p>
+    <div id="closures">Loading…</div>`;
   const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
   const data = await api("/api/admin/hours");
@@ -498,36 +524,64 @@ async function viewHours() {
   const hoursDiv = document.getElementById("hours");
   drawHours();
 
+  function syncTimesFromDom() {
+    hoursDiv.querySelectorAll(".win-row[data-i]").forEach((row) => {
+      const i = +row.dataset.i;
+      rows[i].open_min = timeToMin(row.querySelector(".open").value);
+      rows[i].close_min = timeToMin(row.querySelector(".close").value);
+    });
+  }
+
   function drawHours() {
-    hoursDiv.innerHTML = DAYS.map((name, dow) => {
+    hoursDiv.innerHTML = `<div class="hours-list">${DAYS.map((name, dow) => {
       const dayRows = rows.map((r, i) => ({ ...r, i })).filter((r) => r.dow === dow);
-      return `<div class="row" data-dow="${dow}" style="margin-bottom:.5rem">
-        <div style="width:110px;font-weight:600">${name}</div>
-        ${dayRows.map((r) => `
-          <span data-i="${r.i}">
-            <input type="time" class="open" value="${minToTime(r.open_min)}"> –
-            <input type="time" class="close" value="${minToTime(r.close_min)}">
-            <button class="btn danger" type="button" data-rm="${r.i}">×</button>
-          </span>`).join("")}
-        <button class="btn secondary" type="button" data-add="${dow}">+ window</button>
-        <span><label style="display:inline">Seats</label>
-          <input type="number" class="daycap" data-dow="${dow}" min="1" max="50" placeholder="default"
-            value="${dayCap[dow] ?? ""}" style="width:75px"></span>
+      const closed = dayRows.length === 0;
+      return `<div class="day-card ${closed ? "is-closed" : ""}" data-dow="${dow}">
+        <div class="day-card-head">
+          <div>
+            <strong>${name}</strong>
+            ${closed ? `<span class="day-badge off">Closed</span>` : `<span class="day-badge">Open</span>`}
+          </div>
+          <div class="day-seats">
+            <label>Seats</label>
+            <input type="number" class="daycap" data-dow="${dow}" min="1" max="50" placeholder="def"
+              value="${dayCap[dow] ?? ""}" inputmode="numeric">
+          </div>
+        </div>
+        <div class="win-list">
+          ${dayRows.map((r) => `
+            <div class="win-row" data-i="${r.i}">
+              <input type="time" class="open" value="${minToTime(r.open_min)}" aria-label="${name} open">
+              <span class="dash">–</span>
+              <input type="time" class="close" value="${minToTime(r.close_min)}" aria-label="${name} close">
+              <button class="btn danger btn-icon" type="button" data-rm="${r.i}" aria-label="Remove window">×</button>
+            </div>`).join("")}
+        </div>
+        <div class="day-card-actions">
+          <button class="btn secondary" type="button" data-add="${dow}">+ time window</button>
+        </div>
       </div>`;
-    }).join("") + `<button class="btn" id="save-hours">Save hours &amp; seats</button>`;
+    }).join("")}</div>
+    <button class="btn hours-save" id="save-hours" type="button">Save hours &amp; seats</button>`;
 
     hoursDiv.querySelectorAll("[data-add]").forEach((b) => {
-      b.onclick = () => { captureDayCap(); rows.push({ dow: +b.dataset.add, open_min: 540, close_min: 1200 }); drawHours(); };
+      b.onclick = () => {
+        syncTimesFromDom();
+        captureDayCap();
+        rows.push({ dow: +b.dataset.add, open_min: 540, close_min: 1200 });
+        drawHours();
+      };
     });
     hoursDiv.querySelectorAll("[data-rm]").forEach((b) => {
-      b.onclick = () => { captureDayCap(); rows.splice(+b.dataset.rm, 1); drawHours(); };
+      b.onclick = () => {
+        syncTimesFromDom();
+        captureDayCap();
+        rows.splice(+b.dataset.rm, 1);
+        drawHours();
+      };
     });
     document.getElementById("save-hours").onclick = async () => {
-      hoursDiv.querySelectorAll("span[data-i]").forEach((span) => {
-        const i = +span.dataset.i;
-        rows[i].open_min = timeToMin(span.querySelector(".open").value);
-        rows[i].close_min = timeToMin(span.querySelector(".close").value);
-      });
+      syncTimesFromDom();
       captureDayCap();
       try {
         await api("/api/admin/hours", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ hours: rows, day_capacity: dayCap }) });
@@ -547,13 +601,23 @@ async function viewHours() {
   async function loadClosures() {
     const div = document.getElementById("closures");
     const data = await api("/api/admin/closures");
-    div.innerHTML = (data.closures.map((c) => `
-      <div class="row"><div style="width:130px">${esc(c.date)}</div><div>${esc(c.reason)}</div>
-      <button class="btn danger" type="button" data-date="${esc(c.date)}">Remove</button></div>`).join("") || "<p><small class='hint'>No closures scheduled.</small></p>") + `
-      <div class="row">
-        <div><label>Date</label><input type="date" id="cl-date"></div>
-        <div><label>Reason</label><input id="cl-reason" placeholder="e.g. Thanksgiving"></div>
-        <button class="btn" id="cl-add">Add closure</button>
+    const list = data.closures.length
+      ? `<div class="closure-list">${data.closures.map((c) => `
+          <div class="closure-card">
+            <div>
+              <div class="when">${esc(longDate(c.date))}</div>
+              <small class="hint">${esc(c.reason || "Closed")}</small>
+            </div>
+            <button class="btn danger" type="button" data-date="${esc(c.date)}">Remove</button>
+          </div>`).join("")}</div>`
+      : `<p><small class="hint">No closures scheduled.</small></p>`;
+    div.innerHTML = list + `
+      <div class="closure-add">
+        <div class="row" style="margin-bottom:0">
+          <div><label>Date</label><input type="date" id="cl-date"></div>
+          <div><label>Reason</label><input id="cl-reason" placeholder="e.g. Thanksgiving"></div>
+          <button class="btn" id="cl-add" type="button">Add closure</button>
+        </div>
       </div>`;
     div.querySelectorAll("[data-date]").forEach((b) => {
       b.onclick = async () => { await api(`/api/admin/closures/${b.dataset.date}`, { method: "DELETE" }); loadClosures(); };
