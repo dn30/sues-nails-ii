@@ -1,7 +1,5 @@
 import { handleListServices, handleAvailability, handleCreateBooking, json } from "./api.js";
 import {
-  checkAuth,
-  unauthorized,
   adminListBookings,
   adminAvailability,
   adminCreateBooking,
@@ -21,6 +19,20 @@ import {
   adminGetSettings,
   adminPutSettings,
 } from "./admin-api.js";
+import {
+  googleAuthConfigured,
+  getSessionUser,
+  renderLogin,
+  startGoogleOAuth,
+  handleGoogleCallback,
+  handleLogout,
+  adminListUsers,
+  adminInviteUser,
+  adminUpdateUser,
+  checkBasicAuth,
+  unauthorizedBasic,
+  unauthorizedJson,
+} from "./auth-google.js";
 import widgetJs from "./widget.client.js";
 import adminHtml from "./admin.page.html";
 import bookingHtml from "./booking.page.html";
@@ -44,7 +56,6 @@ export default {
 
     try {
       // Widget JS stays public so the authenticated booking page can load it.
-      // The HTML gate (/booking) is what keeps the soft-launch private.
       if (method === "GET" && path === "/widget.js") {
         return new Response(widgetJs, {
           headers: {
@@ -55,32 +66,43 @@ export default {
         });
       }
 
-      // ---- public API (needed by the widget after login) ----
+      // ---- public API (needed by the widget after soft-launch login) ----
       if (method === "GET" && path === "/api/health") return json({ ok: true });
       if (method === "GET" && path === "/api/services") return handleListServices(env);
       if (method === "GET" && path === "/api/availability") return handleAvailability(env, url);
       if (method === "POST" && path === "/api/bookings") return handleCreateBooking(env, request);
 
-      // ---- password-protected pages & admin API ----
-      // Soft-launch: /booking (and /) are gated. /admin shares the same credentials.
-      // Public site does not link here — BOOKING_API stays empty on the main site.
-      const gated =
-        path === "/booking" ||
-        path === "/" ||
-        path === "/demo" ||
-        path === "/admin" ||
-        path.startsWith("/api/admin/");
+      // ---- Google auth routes for admin (public) ----
+      if (method === "GET" && path === "/admin/login") {
+        const notice = url.searchParams.get("invited")
+          ? "Invite received. Sign in with the same Google email that got the invite."
+          : "";
+        return renderLogin(request, env, { notice });
+      }
+      if (method === "GET" && path === "/admin/auth/google") return startGoogleOAuth(request, env);
+      if (method === "GET" && path === "/admin/auth/callback") return handleGoogleCallback(request, env);
+      if (method === "GET" && path === "/admin/logout") return handleLogout();
 
-      if (gated) {
-        if (!checkAuth(request, env)) return unauthorized();
-
-        if (method === "GET" && (path === "/booking" || path === "/" || path === "/demo")) {
-          return new Response(bookingHtml, {
-            headers: {
-              "Content-Type": "text/html; charset=utf-8",
-              "Cache-Control": "no-store",
-            },
-          });
+      // ---- Admin UI + API: Google session (invite-only) ----
+      const adminGated = path === "/admin" || path.startsWith("/api/admin/");
+      if (adminGated) {
+        let adminUser = null;
+        // Local/dev fallback while Google secrets are not configured yet.
+        if (!googleAuthConfigured(env)) {
+          if (!checkBasicAuth(request, env)) {
+            return path.startsWith("/api/") ? unauthorizedJson() : unauthorizedBasic();
+          }
+          adminUser = {
+            email: env.ADMIN_USERNAME || "admin",
+            role: "admin",
+            status: "active",
+          };
+        } else {
+          adminUser = await getSessionUser(request, env);
+          if (!adminUser) {
+            if (path.startsWith("/api/")) return unauthorizedJson();
+            return Response.redirect(new URL("/admin/login", request.url).toString(), 302);
+          }
         }
 
         if (method === "GET" && path === "/admin") {
@@ -90,6 +112,26 @@ export default {
               "Cache-Control": "no-store",
             },
           });
+        }
+
+        if (method === "GET" && path === "/api/admin/me") {
+          return json({
+            user: {
+              email: adminUser.email,
+              role: adminUser.role,
+              status: adminUser.status,
+            },
+            google_auth: googleAuthConfigured(env),
+          });
+        }
+
+        if (method === "GET" && path === "/api/admin/users") return adminListUsers(env);
+        if (method === "POST" && path === "/api/admin/users/invite") {
+          return adminInviteUser(env, request, adminUser);
+        }
+        let um = path.match(/^\/api\/admin\/users\/(\d+)$/);
+        if (um && method === "PATCH") {
+          return adminUpdateUser(env, +um[1], request, adminUser);
         }
 
         if (method === "GET" && path === "/api/admin/bookings") return adminListBookings(env, url);
@@ -119,6 +161,22 @@ export default {
 
         if (method === "GET" && path === "/api/admin/settings") return adminGetSettings(env);
         if (method === "PUT" && path === "/api/admin/settings") return adminPutSettings(env, request);
+
+        return json({ error: "Not found" }, 404);
+      }
+
+      // ---- Soft-launch booking page: Basic Auth (unchanged) ----
+      const bookingGated = path === "/booking" || path === "/" || path === "/demo";
+      if (bookingGated) {
+        if (!checkBasicAuth(request, env)) return unauthorizedBasic();
+        if (method === "GET") {
+          return new Response(bookingHtml, {
+            headers: {
+              "Content-Type": "text/html; charset=utf-8",
+              "Cache-Control": "no-store",
+            },
+          });
+        }
       }
 
       return json({ error: "Not found" }, 404);

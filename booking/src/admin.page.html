@@ -9,7 +9,11 @@
 :root{--ink:#262016;--soft:#57503f;--muted:#8a8171;--gold:#a8842c;--gold-dark:#8c6d20;--hairline:rgba(168,132,44,.28);--cream:#faf6ef;--white:#fff;--green:#2e7d4f;--red:#a33}
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:system-ui,sans-serif;background:var(--cream);color:var(--ink);line-height:1.5;padding:1.5rem}
-h1{font-size:1.3rem;margin-bottom:1rem}
+h1{font-size:1.3rem;margin:0}
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:1rem}
+.account{display:flex;align-items:center;gap:.65rem}
+.whoami{font-size:.85rem;color:var(--muted);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+a.logout{text-decoration:none;min-height:36px;padding:.35rem .9rem;display:inline-flex;align-items:center}
 h2{font-size:1.05rem;margin:1.5rem 0 .75rem}
 .tabs{display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1.25rem}
 .tabs button{font:inherit;border:1px solid var(--hairline);background:var(--white);border-radius:999px;padding:.45rem 1.1rem;cursor:pointer}
@@ -19,10 +23,10 @@ table{border-collapse:collapse;width:100%;font-size:.9rem}
 th,td{text-align:left;padding:.5rem .6rem;border-bottom:1px solid var(--hairline);vertical-align:middle}
 th{font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
 input,select,textarea{font:inherit;padding:.45rem .6rem;border:1px solid var(--hairline);border-radius:6px;background:var(--white);color:var(--ink);max-width:100%}
-button.btn{font:inherit;border:none;background:var(--ink);color:var(--cream);border-radius:999px;padding:.45rem 1.1rem;cursor:pointer}
-button.btn:hover{background:var(--gold-dark)}
-button.btn.secondary{background:transparent;color:var(--ink);border:1px solid var(--ink)}
-button.btn.danger{background:transparent;color:var(--red);border:1px solid var(--red)}
+button.btn,a.btn{font:inherit;border:none;background:var(--ink);color:var(--cream);border-radius:999px;padding:.45rem 1.1rem;cursor:pointer}
+button.btn:hover,a.btn:hover{background:var(--gold-dark)}
+button.btn.secondary,a.btn.secondary{background:transparent;color:var(--ink);border:1px solid var(--ink)}
+button.btn.danger,a.btn.danger{background:transparent;color:var(--red);border:1px solid var(--red)}
 .row{display:flex;gap:.75rem;flex-wrap:wrap;align-items:end;margin-bottom:1rem}
 .row label{display:block;font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:.2rem}
 .cancelled{opacity:.5;text-decoration:line-through}
@@ -135,7 +139,9 @@ label{overflow:visible}
 /* ---- Mobile ---- */
 @media (max-width: 720px) {
   body{padding:.75rem}
-  h1{font-size:1.1rem;margin-bottom:.75rem}
+  h1{font-size:1.05rem}
+  .topbar{margin-bottom:.75rem}
+  .whoami{max-width:140px}
   .panel{padding:1rem .8rem}
   /* Tabs: one scrollable line */
   .tabs{flex-wrap:nowrap;overflow-x:auto;margin:0 -.75rem 1rem;padding:0 .75rem .35rem;scrollbar-width:none}
@@ -160,12 +166,19 @@ label{overflow:visible}
 </style>
 </head>
 <body>
-<h1>Sue&rsquo;s Nails — Booking Admin</h1>
+<header class="topbar">
+  <h1>Sue&rsquo;s Nails — Booking Admin</h1>
+  <div class="account">
+    <span id="whoami" class="whoami"></span>
+    <a class="btn secondary logout" href="/admin/logout">Sign out</a>
+  </div>
+</header>
 <div class="tabs">
   <button data-tab="bookings" class="active">Bookings</button>
   <button data-tab="services">Services</button>
   <button data-tab="staff">Staff</button>
   <button data-tab="hours">Hours &amp; Closures</button>
+  <button data-tab="team">Team</button>
   <button data-tab="settings">Settings</button>
 </div>
 <div id="app" class="panel">Loading…</div>
@@ -834,6 +847,86 @@ async function viewHours() {
   }
 }
 
+/* ---------- Team (invite-only Google logins) ---------- */
+async function viewTeam() {
+  app.innerHTML = `<div id="msg" class="msg"></div>
+    <details class="add-booking add-service" id="add-invite">
+      <summary>Invite teammate</summary>
+      <form id="invite-form" class="row" style="margin:0">
+        <div><label>Google email</label><input id="invite-email" type="email" required placeholder="name@gmail.com"></div>
+        <div><label>Role</label>
+          <select id="invite-role">
+            <option value="admin">Admin</option>
+            <option value="employee">Employee</option>
+          </select>
+        </div>
+        <button class="btn" type="submit">Send invite</button>
+      </form>
+    </details>
+    <p class="schedule-lead">Invited people must sign in with that same Google email. They cannot access admin until invited.</p>
+    <div id="team-list">Loading…</div>`;
+
+  async function load() {
+    const div = document.getElementById("team-list");
+    try {
+      const data = await api("/api/admin/users");
+      if (!data.users.length) {
+        div.innerHTML = `<p><small class="hint">No users yet.</small></p>`;
+        return;
+      }
+      div.innerHTML = `<div class="staff-list">${data.users.map((u) => `
+        <div class="staff-row" data-id="${u.id}">
+          <div style="min-width:0">
+            <div class="name">${esc(u.email)}</div>
+            <small class="hint">${esc(u.role)} · ${esc(u.status)}${u.last_login_at ? " · last login " + new Date(u.last_login_at).toLocaleDateString() : ""}</small>
+          </div>
+          ${u.status === "disabled"
+            ? `<button class="btn secondary" type="button" data-enable>Enable</button>`
+            : `<button class="btn danger" type="button" data-disable>Disable</button>`}
+        </div>`).join("")}</div>`;
+      div.querySelectorAll("[data-disable]").forEach((b) => {
+        b.onclick = async () => {
+          const id = b.closest("[data-id]").dataset.id;
+          if (!confirm("Disable this user's access?")) return;
+          try {
+            await api(`/api/admin/users/${id}`, patch({ status: "disabled" }));
+            showMsg("User disabled.");
+            load();
+          } catch (e) { showMsg(e.message, true); }
+        };
+      });
+      div.querySelectorAll("[data-enable]").forEach((b) => {
+        b.onclick = async () => {
+          const id = b.closest("[data-id]").dataset.id;
+          try {
+            await api(`/api/admin/users/${id}`, patch({ status: "invited" }));
+            showMsg("User re-enabled as invited. They can sign in with Google again.");
+            load();
+          } catch (e) { showMsg(e.message, true); }
+        };
+      });
+    } catch (e) { div.innerHTML = `<p class="msg err">${esc(e.message)}</p>`; }
+  }
+
+  document.getElementById("invite-form").onsubmit = async (e) => {
+    e.preventDefault();
+    const email = document.getElementById("invite-email").value.trim();
+    const role = document.getElementById("invite-role").value;
+    try {
+      const res = await api("/api/admin/users/invite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, role }),
+      });
+      document.getElementById("invite-email").value = "";
+      document.getElementById("add-invite").open = false;
+      showMsg(res.email_note || "Invite created.");
+      load();
+    } catch (err) { showMsg(err.message, true); }
+  };
+  await load();
+}
+
 /* ---------- Settings ---------- */
 function tip(text) {
   return `<span class="tip"><button type="button" aria-label="More info">?</button><span class="tip-bubble" role="tooltip">${text}</span></span>`;
@@ -888,7 +981,14 @@ document.addEventListener("pointerdown", (e) => {
   closeAllTips();
 }, true);
 
-const views = { bookings: viewBookings, services: viewServices, staff: viewStaff, hours: viewHours, settings: viewSettings };
+const views = {
+  bookings: viewBookings,
+  services: viewServices,
+  staff: viewStaff,
+  hours: viewHours,
+  team: viewTeam,
+  settings: viewSettings,
+};
 document.querySelectorAll(".tabs button").forEach((b) => {
   b.onclick = () => {
     closeAllTips();
@@ -897,8 +997,20 @@ document.querySelectorAll(".tabs button").forEach((b) => {
     views[b.dataset.tab]().catch((e) => { app.innerHTML = `<p class="msg err">${esc(e.message)}</p>`; });
   };
 });
-api("/api/admin/settings").then((d) => { SETTINGS = d.settings; return viewBookings(); })
-  .catch((e) => { app.innerHTML = `<p class="msg err">${esc(e.message)}</p>`; });
+Promise.all([api("/api/admin/settings"), api("/api/admin/me")])
+  .then(([settingsData, me]) => {
+    SETTINGS = settingsData.settings;
+    const who = document.getElementById("whoami");
+    if (who && me.user?.email) who.textContent = me.user.email;
+    return viewBookings();
+  })
+  .catch((e) => {
+    if (String(e.message || "").includes("401") || String(e.message || "").includes("Authentication")) {
+      location.href = "/admin/login";
+      return;
+    }
+    app.innerHTML = `<p class="msg err">${esc(e.message)}</p>`;
+  });
 </script>
 </body>
 </html>

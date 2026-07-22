@@ -11,45 +11,6 @@ import {
 } from "./db.js";
 import { parseYmd, wallToUtc, ymdInTz, fmtTimeInTz, maxConcurrentSeats } from "./slots.js";
 
-export function checkAuth(request, env) {
-  const expectedUser = env.ADMIN_USERNAME;
-  const expectedPass = env.ADMIN_PASSWORD;
-  if (!expectedUser || !expectedPass) return false; // not configured -> locked down
-  const header = request.headers.get("Authorization") || "";
-  if (!header.startsWith("Basic ")) return false;
-  let decoded;
-  try {
-    decoded = atob(header.slice(6));
-  } catch {
-    return false;
-  }
-  const idx = decoded.indexOf(":");
-  const user = idx === -1 ? decoded : decoded.slice(0, idx);
-  const pass = idx === -1 ? "" : decoded.slice(idx + 1);
-  // Exact email match (case-insensitive) + password.
-  return (
-    timingSafeEqual(user.toLowerCase(), expectedUser.toLowerCase()) &&
-    timingSafeEqual(pass, expectedPass)
-  );
-}
-
-function timingSafeEqual(a, b) {
-  const enc = new TextEncoder();
-  const ab = enc.encode(a);
-  const bb = enc.encode(b);
-  let diff = ab.length ^ bb.length;
-  const len = Math.max(ab.length, bb.length);
-  for (let i = 0; i < len; i++) diff |= (ab[i] || 0) ^ (bb[i] || 0);
-  return diff === 0;
-}
-
-export function unauthorized() {
-  return new Response("Authentication required", {
-    status: 401,
-    headers: { "WWW-Authenticate": 'Basic realm="Sue\'s Nails", charset="UTF-8"' },
-  });
-}
-
 // ---- bookings ----
 
 export async function adminListBookings(env, url) {

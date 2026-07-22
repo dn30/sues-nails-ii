@@ -21,12 +21,13 @@ No frameworks, no build step, no other services.
 - **Manual round robin**: each booking has an "assigned to" field the admin sets from
   the employee list managed in the Staff tab — no automated distribution
 - **Embeddable widget**: two lines of HTML on any site
-- **Admin at `/admin`**: HTTP Basic Auth deep link, invisible from the customer site —
-  manage bookings, services, hours, closures, and settings
+- **Admin at `/admin`**: invite-only **Google sign-in** (Team tab sends invite emails).
+  Invisible from the customer site — manage bookings, services, hours, closures, team, and settings
+- **Soft-launch `/booking`**: still uses HTTP Basic Auth until you open booking to the public
 - Timezone-aware (default `America/Los_Angeles`); times stored as UTC epoch ms
 
-Out of scope for this MVP (by design): payments, email/SMS notifications,
-customer-facing cancellation. The schema keeps everything needed to add them later.
+Out of scope for this MVP (by design): payments, customer accounts, customer-facing
+cancellation. The schema keeps everything needed to add them later.
 
 ## Repository layout
 
@@ -38,12 +39,14 @@ booking/
 └── src/
     ├── index.js           Router / entry point
     ├── api.js             Public API (services, availability, create booking)
-    ├── admin-api.js       Admin API + Basic Auth
+    ├── admin-api.js       Admin booking/services/hours APIs
+    ├── auth-google.js     Google OAuth, sessions, invites, booking Basic Auth
     ├── db.js              Query helpers + settings
     ├── slots.js           Slot computation, capacity sweep, timezone math
     ├── widget.client.js   Embeddable widget (served at /widget.js)
     ├── admin.page.html    Admin single-page UI (served at /admin)
-    └── demo.page.html     Demo embed page (served at / and /demo)
+    ├── booking.page.html  Soft-launch booking page
+    └── migrations/        D1 migrations (admin users, etc.)
 ```
 
 ## Deploy (one time)
@@ -61,17 +64,42 @@ npx wrangler d1 create sues-nails-booking
 # 2. Create tables and seed defaults (hours, starter services, settings)
 npx wrangler d1 execute sues-nails-booking --remote --file=schema.sql
 
-# 3. Set the admin / soft-launch password (username is in wrangler.toml)
+# 3. Soft-launch password for /booking (username is in wrangler.toml)
 npx wrangler secret put ADMIN_PASSWORD
 
-# 4. Ship it
+# 4. Google auth + session signing for /admin
+npx wrangler secret put GOOGLE_CLIENT_ID
+npx wrangler secret put GOOGLE_CLIENT_SECRET
+npx wrangler secret put SESSION_SECRET   # long random string
+
+# 5. Optional: Resend API key so Team invites are emailed
+npx wrangler secret put RESEND_API_KEY
+
+# 6. Apply admin_users migration (also included in schema.sql for fresh DBs)
+npx wrangler d1 execute sues-nails-booking --remote --file=migrations/0001_admin_users.sql
+
+# 7. Ship it
 npx wrangler deploy
 ```
 
-Soft-launch URLs after deploy:
+### Google Cloud setup
 
-- Booking (password-gated): `https://sues-nails-booking.<subdomain>.workers.dev/booking`
-- Admin (same login): `https://sues-nails-booking.<subdomain>.workers.dev/admin`
+1. Create an OAuth client (Web application) in Google Cloud Console.
+2. Authorized redirect URI: `https://suenails.com/admin/auth/callback`
+   (and `http://localhost:8787/admin/auth/callback` for local).
+3. Put the client ID/secret into Worker secrets as above.
+
+The salon owner email (`ADMIN_USERNAME` / seeded in `admin_users`) can sign in
+immediately. Everyone else must be invited from **Admin → Team** first, using the
+same Google email they will sign in with.
+
+Without `RESEND_API_KEY`, invites are still saved and the UI shows a login link
+you can share manually.
+
+Soft-launch URLs:
+
+- Booking (Basic Auth): `https://suenails.com/booking`
+- Admin (Google, invite-only): `https://suenails.com/admin`
 
 Leave `window.BOOKING_API` empty on the main site until you're ready to go public.
 
