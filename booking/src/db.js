@@ -41,6 +41,56 @@ export async function listServices(db, { activeOnly = false } = {}) {
   return results;
 }
 
+export async function getServicesByIds(db, ids, { activeOnly = false } = {}) {
+  const unique = [...new Set(ids.map((n) => parseInt(n, 10)).filter((n) => n > 0))];
+  if (!unique.length) return [];
+  const placeholders = unique.map(() => "?").join(",");
+  const sql = `SELECT * FROM services WHERE id IN (${placeholders})${activeOnly ? " AND active = 1" : ""}`;
+  const { results } = await db.prepare(sql).bind(...unique).all();
+  const byId = new Map(results.map((s) => [s.id, s]));
+  // Preserve request order; drop missing ids.
+  return unique.map((id) => byId.get(id)).filter(Boolean);
+}
+
+/** Collapse selected services into one appointment block for slot math. */
+export function composeAppointment(services) {
+  if (!services.length) return null;
+  const duration_min = services.reduce((sum, s) => sum + s.duration_min, 0);
+  const price_cents = services.reduce((sum, s) => sum + (s.price_cents || 0), 0);
+  return {
+    duration_min,
+    price_cents,
+    // Gap before first service / after last service.
+    buffer_before_min: services[0].buffer_before_min || 0,
+    buffer_after_min: services[services.length - 1].buffer_after_min || 0,
+    names: services.map((s) => s.name),
+    label: services.map((s) => s.name).join(" + "),
+    primary_id: services[0].id,
+    services,
+  };
+}
+
+export async function servicesForBookings(db, bookingIds) {
+  if (!bookingIds.length) return {};
+  const placeholders = bookingIds.map(() => "?").join(",");
+  const { results } = await db
+    .prepare(
+      `SELECT bs.booking_id, bs.service_id, bs.sort_order, bs.duration_min, bs.price_cents, s.name
+       FROM booking_services bs
+       JOIN services s ON s.id = bs.service_id
+       WHERE bs.booking_id IN (${placeholders})
+       ORDER BY bs.booking_id, bs.sort_order, bs.service_id`
+    )
+    .bind(...bookingIds)
+    .all();
+  const map = {};
+  for (const row of results) {
+    if (!map[row.booking_id]) map[row.booking_id] = [];
+    map[row.booking_id].push(row);
+  }
+  return map;
+}
+
 export async function getHours(db) {
   const { results } = await db.prepare("SELECT dow, open_min, close_min FROM hours ORDER BY dow, open_min").all();
   return results;

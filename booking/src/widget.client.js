@@ -22,11 +22,13 @@
     ".snb-services{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:.75rem;list-style:none}",
     ".snb-service{border:1px solid var(--snb-hairline);border-radius:6px;background:var(--snb-white);padding:.85rem 1rem;cursor:pointer;text-align:left;font:inherit;transition:border-color .15s,box-shadow .15s;width:100%}",
     ".snb-service:hover{border-color:var(--snb-gold)}",
-    ".snb-service.snb-selected{border-color:var(--snb-gold-dark);box-shadow:0 0 0 1px var(--snb-gold-dark)}",
+    ".snb-service.snb-selected{border-color:var(--snb-gold-dark);box-shadow:0 0 0 1px var(--snb-gold-dark);background:#fffdf8}",
     ".snb-service-name{font-weight:600}",
     ".snb-service-meta{font-size:.85rem;color:var(--snb-soft);margin-top:.15rem}",
     ".snb-service-desc{font-size:.8rem;color:var(--snb-muted);margin-top:.15rem}",
     ".snb-price{color:var(--snb-gold-dark);font-weight:600}",
+    ".snb-summary{margin:.85rem 0 0;padding:.75rem 1rem;border:1px dashed var(--snb-hairline);border-radius:8px;background:var(--snb-cream);font-size:.9rem}",
+    ".snb-summary strong{font-weight:600}",
     ".snb-days,.snb-times{display:flex;flex-wrap:wrap;gap:.5rem}",
     ".snb-timegroup{margin:.75rem 0 .25rem;font-size:.75rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--snb-muted)}",
     ".snb-chip{border:1px solid var(--snb-hairline);background:var(--snb-white);border-radius:999px;padding:.45rem .9rem;font:inherit;font-size:.88rem;cursor:pointer;transition:border-color .15s}",
@@ -50,7 +52,7 @@
 
   var state = {
     services: [],
-    service: null,
+    selected: [], // selected service objects, in pick order
     date: null,
     slots: [],
     slot: null,
@@ -58,6 +60,36 @@
     capacity: 1,
     loading: false,
   };
+
+  function selectedIds() {
+    return state.selected.map(function (s) { return s.id; });
+  }
+
+  function isSelected(id) {
+    return state.selected.some(function (s) { return s.id === id; });
+  }
+
+  function toggleService(s) {
+    if (isSelected(s.id)) {
+      state.selected = state.selected.filter(function (x) { return x.id !== s.id; });
+    } else {
+      state.selected.push(s);
+    }
+    state.slot = null;
+    state.slots = [];
+    if (state.selected.length && state.date) loadSlots();
+    else render();
+  }
+
+  function appointmentTotals() {
+    var duration = 0;
+    var price = 0;
+    state.selected.forEach(function (s) {
+      duration += s.duration_min;
+      price += s.price_cents || 0;
+    });
+    return { duration: duration, price: price };
+  }
 
   var styleEl = document.createElement("style");
   styleEl.textContent = CSS;
@@ -105,22 +137,17 @@
   function render() {
     root.innerHTML = "";
 
-    // Step 1: service
-    root.appendChild(el("p", { class: "snb-step-label", text: "1. Choose a service" }));
+    // Step 1: services (multi-select)
+    root.appendChild(el("p", { class: "snb-step-label", text: "1. Choose services" }));
+    root.appendChild(el("p", { class: "snb-note", text: "Select one or more — they'll be booked as a single appointment." }));
     var list = el("div", { class: "snb-services" });
     state.services.forEach(function (s) {
       var btn = el("button", {
-        class: "snb-service" + (state.service && state.service.id === s.id ? " snb-selected" : ""),
+        class: "snb-service" + (isSelected(s.id) ? " snb-selected" : ""),
         type: "button",
-        onclick: function () {
-          state.service = s;
-          state.slot = null;
-          state.slots = [];
-          if (state.date) loadSlots();
-          else render();
-        },
+        onclick: function () { toggleService(s); },
       });
-      btn.appendChild(el("div", { class: "snb-service-name", text: s.name }));
+      btn.appendChild(el("div", { class: "snb-service-name", text: (isSelected(s.id) ? "✓ " : "") + s.name }));
       var meta = el("div", { class: "snb-service-meta", text: s.duration_min + " min" });
       if (s.price_cents) {
         meta.appendChild(document.createTextNode(" · "));
@@ -132,7 +159,21 @@
     });
     root.appendChild(list);
 
-    if (!state.service) return;
+    if (!state.selected.length) return;
+
+    var totals = appointmentTotals();
+    var summary = el("div", { class: "snb-summary" });
+    summary.appendChild(el("div", {
+      text: state.selected.map(function (s) { return s.name; }).join(" + "),
+    }));
+    var sumMeta = el("div");
+    sumMeta.appendChild(el("strong", { text: totals.duration + " min total" }));
+    if (totals.price) {
+      sumMeta.appendChild(document.createTextNode(" · "));
+      sumMeta.appendChild(el("span", { class: "snb-price", text: fmtPrice(totals.price) }));
+    }
+    summary.appendChild(sumMeta);
+    root.appendChild(summary);
 
     // Step 2: date
     root.appendChild(el("p", { class: "snb-step-label", text: "2. Pick a day" }));
@@ -214,8 +255,11 @@
     partyWrap.appendChild(el("label", { for: "snb-party", text: "Booking for how many people?" }));
     var partySel = el("select", { id: "snb-party", name: "party" });
     for (var p = 1; p <= maxParty; p++) {
-      var priceSuffix = state.service.price_cents ? " — " + fmtPrice(state.service.price_cents * p) : "";
-      var opt = el("option", { value: String(p), text: (p === 1 ? "Just me" : p + " people, same service together") + priceSuffix });
+      var priceSuffix = totals.price ? " — " + fmtPrice(totals.price * p) : "";
+      var opt = el("option", {
+        value: String(p),
+        text: (p === 1 ? "Just me" : p + " people, same services together") + priceSuffix,
+      });
       if (p === state.party) opt.selected = true;
       partySel.appendChild(opt);
     }
@@ -257,7 +301,7 @@
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          service_id: state.service.id,
+          service_ids: selectedIds(),
           start: state.slot.start,
           party_size: parseInt(partySel.value, 10),
           name: form.querySelector("#snb-name").value,
@@ -302,7 +346,7 @@
         type: "button",
         text: "Book another appointment",
         onclick: function () {
-          state.service = null;
+          state.selected = [];
           state.date = null;
           state.slot = null;
           state.slots = [];
@@ -317,7 +361,7 @@
   function loadSlots() {
     state.loading = true;
     render();
-    fetchJson("/api/availability?service_id=" + state.service.id + "&date=" + state.date)
+    fetchJson("/api/availability?service_ids=" + selectedIds().join(",") + "&date=" + state.date)
       .then(function (data) {
         state.slots = data.slots || [];
         state.capacity = data.capacity || 1;

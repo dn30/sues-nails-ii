@@ -1,4 +1,4 @@
-import { json, badRequest, slotsForDate } from "./api.js";
+import { json, badRequest, slotsForDate, parseServiceIds } from "./api.js";
 import {
   getSettings,
   putSettings,
@@ -6,6 +6,9 @@ import {
   getDayCapacity,
   listStaff,
   getService,
+  getServicesByIds,
+  composeAppointment,
+  servicesForBookings,
   bookingsInWindow,
   newBookingCode,
 } from "./db.js";
@@ -36,40 +39,58 @@ export async function adminListBookings(env, url) {
     .bind(fromTs, toTs)
     .all();
 
+  const lineMap = await servicesForBookings(
+    env.DB,
+    results.map((b) => b.id)
+  );
+
   return json({
-    bookings: results.map((b) => ({
-      id: b.id,
-      code: b.code,
-      service: b.service_name,
-      date: ymdInTz(tz, b.start_ts),
-      time: fmtTimeInTz(tz, b.start_ts),
-      start_ts: b.start_ts,
-      party_size: b.party_size,
-      customer_name: b.customer_name,
-      customer_phone: b.customer_phone,
-      customer_email: b.customer_email,
-      notes: b.notes,
-      assigned_to: b.assigned_to,
-      status: b.status,
-    })),
+    bookings: results.map((b) => {
+      const lines = lineMap[b.id] || [];
+      const names = lines.length ? lines.map((l) => l.name) : [b.service_name];
+      return {
+        id: b.id,
+        code: b.code,
+        service: names.join(" + "),
+        services: names,
+        service_ids: lines.map((l) => l.service_id),
+        date: ymdInTz(tz, b.start_ts),
+        time: fmtTimeInTz(tz, b.start_ts),
+        start_ts: b.start_ts,
+        party_size: b.party_size,
+        customer_name: b.customer_name,
+        customer_phone: b.customer_phone,
+        customer_email: b.customer_email,
+        notes: b.notes,
+        assigned_to: b.assigned_to,
+        status: b.status,
+      };
+    }),
   });
 }
 
 // Slots for the admin booking form: no minimum notice, no max-days-ahead
 // window, and inactive services are still bookable by staff.
 export async function adminAvailability(env, url) {
-  const serviceId = parseInt(url.searchParams.get("service_id"), 10);
+  const ids = parseServiceIds(
+    url.searchParams.get("service_ids") || url.searchParams.getAll("service_id")
+  );
+  if (!ids.length) {
+    const one = parseInt(url.searchParams.get("service_id"), 10);
+    if (one) ids.push(one);
+  }
   const dateStr = url.searchParams.get("date");
-  if (!serviceId) return badRequest("service_id is required");
+  if (!ids.length) return badRequest("service_ids is required");
   if (!dateStr) return badRequest("date is required");
 
-  const service = await getService(env.DB, serviceId);
-  if (!service) return json({ error: "Service not found" }, 404);
+  const services = await getServicesByIds(env.DB, ids);
+  if (services.length !== ids.length) return json({ error: "One or more services not found" }, 404);
+  const appointment = composeAppointment(services);
 
   const settings = await getSettings(env.DB);
-  const result = await slotsForDate(env.DB, service, dateStr, settings, Date.now(), { admin: true });
+  const result = await slotsForDate(env.DB, appointment, dateStr, settings, Date.now(), { admin: true });
   if (result.error) return badRequest(result.error);
-  return json({ service_id: serviceId, date: dateStr, ...result });
+  return json({ service_ids: ids, date: dateStr, ...result });
 }
 
 export async function adminCreateBooking(env, request) {
@@ -80,7 +101,8 @@ export async function adminCreateBooking(env, request) {
     return badRequest("Invalid JSON body");
   }
 
-  const serviceId = parseInt(body.service_id, 10);
+  let ids = parseServiceIds(body.service_ids);
+  if (!ids.length && body.service_id) ids = parseServiceIds(body.service_id);
   const partySize = Math.max(1, parseInt(body.party_size, 10) || 1);
   const name = String(body.name || "").trim();
   const phone = String(body.phone || "").trim();
@@ -91,11 +113,12 @@ export async function adminCreateBooking(env, request) {
   // (walk-ins, squeezing in a regular, etc). Capacity checks are skipped.
   const force = body.force === true || body.force === 1;
 
-  if (!serviceId) return badRequest("service_id is required");
+  if (!ids.length) return badRequest("service_ids is required");
   if (!name) return badRequest("name is required");
 
-  const service = await getService(env.DB, serviceId);
-  if (!service) return json({ error: "Service not found" }, 404);
+  const services = await getServicesByIds(env.DB, ids);
+  if (services.length !== ids.length) return json({ error: "One or more services not found" }, 404);
+  const appointment = composeAppointment(services);
 
   const settings = await getSettings(env.DB);
   const now = Date.now();
@@ -114,7 +137,7 @@ export async function adminCreateBooking(env, request) {
 
   let capacity = settings.capacity;
   if (!force) {
-    const result = await slotsForDate(env.DB, service, dateStr, settings, now, { admin: true });
+    const result = await slotsForDate(env.DB, appointment, dateStr, settings, now, { admin: true });
     if (result.error) return badRequest(result.error);
     capacity = result.capacity;
     if (partySize > capacity) return badRequest(`Party size cannot exceed ${capacity}`);
@@ -130,9 +153,9 @@ export async function adminCreateBooking(env, request) {
     }
   }
 
-  const endTs = startTs + service.duration_min * 60000;
-  const blockStart = startTs - service.buffer_before_min * 60000;
-  const blockEnd = endTs + service.buffer_after_min * 60000;
+  const endTs = startTs + appointment.duration_min * 60000;
+  const blockStart = startTs - appointment.buffer_before_min * 60000;
+  const blockEnd = endTs + appointment.buffer_after_min * 60000;
   const code = newBookingCode();
 
   const inserted = await env.DB.prepare(
@@ -141,15 +164,41 @@ export async function adminCreateBooking(env, request) {
         party_size, customer_name, customer_phone, customer_email, notes, assigned_to, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`
   )
-    .bind(code, serviceId, startTs, endTs, blockStart, blockEnd, partySize, name, phone, email, notes, assignedTo, now)
+    .bind(
+      code,
+      appointment.primary_id,
+      startTs,
+      endTs,
+      blockStart,
+      blockEnd,
+      partySize,
+      name,
+      phone,
+      email,
+      notes,
+      assignedTo,
+      now
+    )
     .first();
+
+  await env.DB.batch(
+    services.map((s, i) =>
+      env.DB.prepare(
+        `INSERT INTO booking_services (booking_id, service_id, sort_order, duration_min, price_cents)
+         VALUES (?, ?, ?, ?, ?)`
+      ).bind(inserted.id, s.id, i, s.duration_min, s.price_cents || 0)
+    )
+  );
 
   if (!force) {
     // Same race guard as the public endpoint: verify capacity after insert.
     const overlapping = await bookingsInWindow(env.DB, blockStart, blockEnd);
     const peak = maxConcurrentSeats(overlapping, blockStart, blockEnd);
     if (peak > capacity) {
-      await env.DB.prepare("DELETE FROM bookings WHERE id = ?").bind(inserted.id).run();
+      await env.DB.batch([
+        env.DB.prepare("DELETE FROM booking_services WHERE booking_id = ?").bind(inserted.id),
+        env.DB.prepare("DELETE FROM bookings WHERE id = ?").bind(inserted.id),
+      ]);
       return json({ error: "That time was just booked by someone else. Please pick another." }, 409);
     }
   }
@@ -159,7 +208,8 @@ export async function adminCreateBooking(env, request) {
       booking: {
         id: inserted.id,
         code,
-        service: service.name,
+        service: appointment.label,
+        services: appointment.names,
         date: dateStr,
         time: fmtTimeInTz(tz, startTs),
         party_size: partySize,
@@ -266,7 +316,13 @@ export async function adminUpdateService(env, id, request) {
 }
 
 export async function adminDeleteService(env, id) {
-  const used = await env.DB.prepare("SELECT COUNT(*) AS n FROM bookings WHERE service_id = ?").bind(id).first();
+  const used = await env.DB.prepare(
+    `SELECT
+       (SELECT COUNT(*) FROM bookings WHERE service_id = ?) +
+       (SELECT COUNT(*) FROM booking_services WHERE service_id = ?) AS n`
+  )
+    .bind(id, id)
+    .first();
   if (used.n > 0) {
     // Keep history intact; deactivate instead.
     await env.DB.prepare("UPDATE services SET active = 0 WHERE id = ?").bind(id).run();

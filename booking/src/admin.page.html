@@ -125,6 +125,11 @@ a.tel:active{opacity:.7}
 .staff-row{display:flex;align-items:center;justify-content:space-between;gap:.75rem;border:1px solid var(--hairline);border-radius:10px;padding:.65rem .85rem;background:var(--white)}
 .staff-row .name{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .staff-row .btn{flex:0 0 auto;min-height:36px;padding:.35rem .9rem;width:auto}
+.svc-pick{display:flex;flex-wrap:wrap;gap:.45rem;margin:.25rem 0 .5rem}
+.svc-pick label{display:inline-flex;align-items:center;gap:.4rem;border:1px solid var(--hairline);border-radius:999px;padding:.35rem .75rem;font-size:.85rem;text-transform:none;letter-spacing:0;color:var(--ink);cursor:pointer;background:var(--white);margin:0}
+.svc-pick input{width:auto;min-height:0}
+.svc-pick label.is-on{border-color:var(--ink);background:#f7f3ea;font-weight:600}
+.ab-summary{font-size:.88rem;color:var(--muted);margin:0 0 .75rem}
 
 /* Tip: tap/hover "?" next to a label — bubble anchors to the field, not the icon */
 .grid2>div,.field-tip{position:relative}
@@ -249,10 +254,18 @@ async function viewBookings() {
     <details class="add-booking" id="add-wrap">
     <summary>Add a booking</summary>
     <form id="add-form">
+      <div>
+        <label>Services</label>
+        <div class="svc-pick" id="ab-services">
+          ${services.map((s, i) => `
+            <label class="${i === 0 ? "is-on" : ""}">
+              <input type="checkbox" value="${s.id}" ${i === 0 ? "checked" : ""}>
+              ${esc(s.name)}${s.active === 0 ? " (inactive)" : ""}
+            </label>`).join("")}
+        </div>
+        <p class="ab-summary" id="ab-summary"></p>
+      </div>
       <div class="row">
-        <div><label>Service</label><select id="ab-service">
-          ${services.map((s) => `<option value="${s.id}">${esc(s.name)}${s.active === 0 ? " (inactive)" : ""}</option>`).join("")}
-        </select></div>
         <div><label>Date</label><input type="date" id="ab-date" value="${today}" required></div>
         <div><label>Time</label><select id="ab-time"></select></div>
         <div id="ab-custom-wrap" style="display:none"><label>Custom time</label><input type="time" id="ab-custom"></div>
@@ -291,15 +304,41 @@ async function viewBookings() {
     document.getElementById("add-wrap").open = true;
   }
 
-  const abService = document.getElementById("ab-service");
   const abDate = document.getElementById("ab-date");
   const abTime = document.getElementById("ab-time");
   const abCustomWrap = document.getElementById("ab-custom-wrap");
+  const abSummary = document.getElementById("ab-summary");
+  const svcById = new Map(services.map((s) => [String(s.id), s]));
+
+  function selectedServiceIds() {
+    return [...document.querySelectorAll("#ab-services input:checked")].map((c) => parseInt(c.value, 10));
+  }
+
+  function updateServiceSummary() {
+    const ids = selectedServiceIds();
+    document.querySelectorAll("#ab-services label").forEach((lab) => {
+      lab.classList.toggle("is-on", lab.querySelector("input").checked);
+    });
+    if (!ids.length) {
+      abSummary.textContent = "Select at least one service.";
+      return;
+    }
+    const picked = ids.map((id) => svcById.get(String(id))).filter(Boolean);
+    const mins = picked.reduce((n, s) => n + s.duration_min, 0);
+    const names = picked.map((s) => s.name).join(" + ");
+    abSummary.textContent = `${names} · ${mins} min total`;
+  }
 
   async function loadSlots() {
+    updateServiceSummary();
+    const ids = selectedServiceIds();
+    if (!ids.length) {
+      abTime.innerHTML = `<option value="">— pick services first —</option><option value="custom">Custom time…</option>`;
+      return;
+    }
     abTime.innerHTML = `<option value="">Loading…</option>`;
     try {
-      const data = await api(`/api/admin/availability?service_id=${abService.value}&date=${abDate.value}`);
+      const data = await api(`/api/admin/availability?service_ids=${ids.join(",")}&date=${abDate.value}`);
       const opts = data.slots.map((s) =>
         `<option value="${s.start_ts}">${esc(s.label)} (${s.remaining} left)</option>`).join("");
       abTime.innerHTML = (opts || `<option value="">— no open slots —</option>`) +
@@ -310,15 +349,17 @@ async function viewBookings() {
     }
     abCustomWrap.style.display = abTime.value === "custom" ? "" : "none";
   }
-  abService.onchange = loadSlots;
+  document.querySelectorAll("#ab-services input").forEach((c) => { c.onchange = loadSlots; });
   abDate.onchange = loadSlots;
   abTime.onchange = () => { abCustomWrap.style.display = abTime.value === "custom" ? "" : "none"; };
   await loadSlots();
 
   document.getElementById("add-form").onsubmit = async (e) => {
     e.preventDefault();
+    const ids = selectedServiceIds();
+    if (!ids.length) return showMsg("Select at least one service", true);
     const body = {
-      service_id: parseInt(abService.value, 10),
+      service_ids: ids,
       party_size: parseInt(document.getElementById("ab-party").value, 10) || 1,
       name: document.getElementById("ab-name").value.trim(),
       phone: document.getElementById("ab-phone").value.trim(),

@@ -1,6 +1,7 @@
 import {
   getSettings,
-  getService,
+  getServicesByIds,
+  composeAppointment,
   listServices,
   getHours,
   getDayCapacity,
@@ -39,9 +40,28 @@ export function capacityForDate(settings, dayCapacity, date) {
   return dayCapacity[dow] ?? settings.capacity;
 }
 
+/** Parse service_ids from query (?service_ids=1,2 or repeated service_id=) or body. */
+export function parseServiceIds(input) {
+  if (Array.isArray(input)) {
+    return [...new Set(input.map((n) => parseInt(n, 10)).filter((n) => n > 0))];
+  }
+  if (typeof input === "string") {
+    return [
+      ...new Set(
+        input
+          .split(",")
+          .map((n) => parseInt(n.trim(), 10))
+          .filter((n) => n > 0)
+      ),
+    ];
+  }
+  const one = parseInt(input, 10);
+  return one > 0 ? [one] : [];
+}
+
 // opts.admin relaxes customer-facing limits: no minimum notice and no
 // max-days-ahead window (staff take phone bookings beyond the public window).
-export async function slotsForDate(db, service, dateStr, settings, now, opts = {}) {
+export async function slotsForDate(db, appointment, dateStr, settings, now, opts = {}) {
   const date = parseYmd(dateStr);
   if (!date) return { error: "Invalid date, expected YYYY-MM-DD" };
 
@@ -64,7 +84,7 @@ export async function slotsForDate(db, service, dateStr, settings, now, opts = {
   const bookings = await bookingsInWindow(db, dayStart - 86400000, dayStart + 2 * 86400000);
 
   const slots = computeSlots({
-    service,
+    service: appointment,
     date,
     settings: { ...settings, capacity, min_notice_min: opts.admin ? 0 : settings.min_notice_min },
     hours,
@@ -74,6 +94,9 @@ export async function slotsForDate(db, service, dateStr, settings, now, opts = {
   });
   return {
     capacity,
+    duration_min: appointment.duration_min,
+    total_cents: appointment.price_cents,
+    services: appointment.names,
     slots: slots.map((s) => ({
       start: new Date(s.start_ts).toISOString(),
       start_ts: s.start_ts,
@@ -97,18 +120,26 @@ export async function handleListServices(env) {
 }
 
 export async function handleAvailability(env, url) {
-  const serviceId = parseInt(url.searchParams.get("service_id"), 10);
+  const ids = parseServiceIds(
+    url.searchParams.get("service_ids") || url.searchParams.getAll("service_id")
+  );
+  // Backward compat: single service_id=
+  if (!ids.length) {
+    const one = parseInt(url.searchParams.get("service_id"), 10);
+    if (one) ids.push(one);
+  }
   const dateStr = url.searchParams.get("date");
-  if (!serviceId) return badRequest("service_id is required");
+  if (!ids.length) return badRequest("service_ids is required");
   if (!dateStr) return badRequest("date is required");
 
-  const service = await getService(env.DB, serviceId, { activeOnly: true });
-  if (!service) return json({ error: "Service not found" }, 404);
+  const services = await getServicesByIds(env.DB, ids, { activeOnly: true });
+  if (services.length !== ids.length) return json({ error: "One or more services not found" }, 404);
 
+  const appointment = composeAppointment(services);
   const settings = await getSettings(env.DB);
-  const result = await slotsForDate(env.DB, service, dateStr, settings, Date.now());
+  const result = await slotsForDate(env.DB, appointment, dateStr, settings, Date.now());
   if (result.error) return badRequest(result.error);
-  return json({ service_id: serviceId, date: dateStr, ...result });
+  return json({ service_ids: ids, date: dateStr, ...result });
 }
 
 export async function handleCreateBooking(env, request) {
@@ -119,7 +150,8 @@ export async function handleCreateBooking(env, request) {
     return badRequest("Invalid JSON body");
   }
 
-  const serviceId = parseInt(body.service_id, 10);
+  let ids = parseServiceIds(body.service_ids);
+  if (!ids.length && body.service_id) ids = parseServiceIds(body.service_id);
   const startTs = Date.parse(body.start);
   const partySize = Math.max(1, parseInt(body.party_size, 10) || 1);
   const name = String(body.name || "").trim();
@@ -127,13 +159,14 @@ export async function handleCreateBooking(env, request) {
   const email = String(body.email || "").trim();
   const notes = String(body.notes || "").trim().slice(0, 500);
 
-  if (!serviceId) return badRequest("service_id is required");
+  if (!ids.length) return badRequest("service_ids is required");
   if (!Number.isFinite(startTs)) return badRequest("start must be an ISO datetime");
   if (!name) return badRequest("name is required");
   if (!phone) return badRequest("phone is required");
 
-  const service = await getService(env.DB, serviceId, { activeOnly: true });
-  if (!service) return json({ error: "Service not found" }, 404);
+  const services = await getServicesByIds(env.DB, ids, { activeOnly: true });
+  if (services.length !== ids.length) return json({ error: "One or more services not found" }, 404);
+  const appointment = composeAppointment(services);
 
   const settings = await getSettings(env.DB);
 
@@ -141,7 +174,7 @@ export async function handleCreateBooking(env, request) {
   // inside hours, not closed, enough seats).
   const now = Date.now();
   const dateStr = ymdInTz(settings.timezone, startTs);
-  const result = await slotsForDate(env.DB, service, dateStr, settings, now);
+  const result = await slotsForDate(env.DB, appointment, dateStr, settings, now);
   if (result.error) return badRequest(result.error);
   const capacity = result.capacity;
   if (partySize > capacity) {
@@ -153,9 +186,9 @@ export async function handleCreateBooking(env, request) {
     return json({ error: `Only ${slot.remaining} seat(s) left at that time` }, 409);
   }
 
-  const endTs = startTs + service.duration_min * 60000;
-  const blockStart = startTs - service.buffer_before_min * 60000;
-  const blockEnd = endTs + service.buffer_after_min * 60000;
+  const endTs = startTs + appointment.duration_min * 60000;
+  const blockStart = startTs - appointment.buffer_before_min * 60000;
+  const blockEnd = endTs + appointment.buffer_after_min * 60000;
   const code = newBookingCode();
 
   const inserted = await env.DB.prepare(
@@ -164,15 +197,39 @@ export async function handleCreateBooking(env, request) {
         party_size, customer_name, customer_phone, customer_email, notes, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`
   )
-    .bind(code, serviceId, startTs, endTs, blockStart, blockEnd, partySize, name, phone, email, notes, now)
+    .bind(
+      code,
+      appointment.primary_id,
+      startTs,
+      endTs,
+      blockStart,
+      blockEnd,
+      partySize,
+      name,
+      phone,
+      email,
+      notes,
+      now
+    )
     .first();
+
+  const lineStmts = services.map((s, i) =>
+    env.DB.prepare(
+      `INSERT INTO booking_services (booking_id, service_id, sort_order, duration_min, price_cents)
+       VALUES (?, ?, ?, ?, ?)`
+    ).bind(inserted.id, s.id, i, s.duration_min, s.price_cents || 0)
+  );
+  await env.DB.batch(lineStmts);
 
   // Post-insert verification guards against a concurrent booking racing past the
   // pre-check (D1 is single-writer, so the last verifier sees all inserts).
   const overlapping = await bookingsInWindow(env.DB, blockStart, blockEnd);
   const peak = maxConcurrentSeats(overlapping, blockStart, blockEnd);
   if (peak > capacity) {
-    await env.DB.prepare("DELETE FROM bookings WHERE id = ?").bind(inserted.id).run();
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM booking_services WHERE booking_id = ?").bind(inserted.id),
+      env.DB.prepare("DELETE FROM bookings WHERE id = ?").bind(inserted.id),
+    ]);
     return json({ error: "That time was just booked by someone else. Please pick another." }, 409);
   }
 
@@ -180,11 +237,13 @@ export async function handleCreateBooking(env, request) {
     {
       booking: {
         code,
-        service: service.name,
+        service: appointment.label,
+        services: appointment.names,
+        duration_min: appointment.duration_min,
         start: new Date(startTs).toISOString(),
         label: `${dateStr} ${fmtTimeInTz(settings.timezone, startTs)}`,
         party_size: partySize,
-        total_cents: service.price_cents * partySize,
+        total_cents: appointment.price_cents * partySize,
       },
     },
     201
