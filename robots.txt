@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+
+Disallow: /admin
+Disallow: /booking
+Disallow: /api/
+
+Sitemap: https://suenails.com/sitemap.xml
